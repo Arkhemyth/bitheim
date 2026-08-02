@@ -1,83 +1,83 @@
-# Plan Maestro de Implementación de Bitheim hasta `v1.0.0`
+# Bitheim Implementation Master Plan up to `v1.0.0`
 
-## Plataforma distribuida para experimentación, minería y análisis sobre Bitcoin
+## Distributed platform for experimentation, mining, and analysis on Bitcoin
 
-**Estado:** Source of Truth
-**Versión del documento:** 1.1
-**Nombre del proyecto:** Bitheim
-**Horizonte:** Desde la inicialización del repositorio hasta `v1.0.0`
-**Naturaleza:** Proyecto open source
-**Usuarios iniciales confirmados:** 2
-**Escala de diseño:** De 2 a decenas de nodos sin rediseño estructural
-**Lenguaje principal:** Python
-**Gestión de proyecto Python:** `uv`
-**Red privada:** Previamente establecida, por ejemplo mediante Headscale/Tailscale
-**Red blockchain inicial:** Bitcoin Core `regtest`
-**Red blockchain objetivo:** `labnet-v1`
-**Plataformas objetivo para `v1.0.0`:**
+**Status:** Source of Truth  
+**Document Version:** 1.1  
+**Project Name:** Bitheim  
+**Horizon:** From repository initialization to `v1.0.0`  
+**Nature:** Open source project  
+**Confirmed Initial Users:** 2  
+**Design Scale:** From 2 to dozens of nodes without structural redesign  
+**Primary Language:** Python  
+**Python Project Management:** `uv`  
+**Private Network:** Pre-established, e.g., via Headscale/Tailscale  
+**Initial Blockchain Network:** Bitcoin Core `regtest`  
+**Target Blockchain Network:** `labnet-v1`  
+**Target Platforms for `v1.0.0`:**
 
 * Linux `amd64`
 * Linux `arm64`
-* macOS Apple Silicon mediante Docker Desktop
-* Windows mediante WSL2 y Docker Desktop
+* macOS Apple Silicon via Docker Desktop
+* Windows via WSL2 and Docker Desktop
 
 ---
 
-# 1. Propósito del documento
+# 1. Document Purpose
 
-Este documento define la arquitectura, alcance, convenciones, estándares de ingeniería, controles de seguridad, módulos, fases de desarrollo, proceso de releases y criterios de aceptación que regirán Bitheim hasta alcanzar la versión `1.0.0`.
+This document defines the architecture, scope, conventions, engineering standards, security controls, modules, development phases, release process, and acceptance criteria that will govern Bitheim until reaching version `1.0.0`.
 
-Su contenido constituye la referencia normativa principal del proyecto.
+Its content constitutes the primary normative reference of the project.
 
-Toda implementación deberá respetar este documento salvo que:
+Every implementation must respect this document unless:
 
-1. se identifique un error técnico;
-2. aparezca una restricción no contemplada;
-3. exista evidencia suficiente para justificar una alternativa;
-4. el cambio sea documentado mediante un Architecture Decision Record, ADR;
-5. ambos mantenedores aprueben la modificación.
+1. a technical error is identified;
+2. an unconsidered constraint arises;
+3. sufficient evidence exists to justify an alternative;
+4. the change is documented through an Architecture Decision Record (ADR);
+5. both maintainers approve the modification.
 
-No deberán introducirse cambios arquitectónicos significativos únicamente por conveniencia inmediata, preferencia personal o incorporación impulsiva de una nueva tecnología.
+Significant architectural changes must not be introduced solely for immediate convenience, personal preference, or impulsive adoption of a new technology.
 
 ---
 
-# 2. Identidad del proyecto
+# 2. Project Identity
 
-## 2.1 Nombre
+## 2.1 Name
 
-El nombre oficial del proyecto será:
+The official project name shall be:
 
 > **Bitheim**
 
-El nombre se utilizará de forma consistente en:
+The name shall be used consistently across:
 
-* repositorio;
-* paquete Python;
-* comando CLI;
-* imágenes Docker;
-* documentación;
-* configuración;
+* repository;
+* Python package;
+* CLI command;
+* Docker images;
+* documentation;
+* configuration;
 * logs;
 * releases;
-* artefactos;
-* nombres de servicio.
+* artifacts;
+* service names.
 
-## 2.2 Convenciones de nombres
+## 2.2 Naming Conventions
 
-| Elemento                           | Nombre                       |
-| ---------------------------------- | ---------------------------- |
-| Proyecto                           | `Bitheim`                    |
-| Repositorio principal              | `bitheim`                    |
-| Paquete Python                     | `bitheim`                    |
-| Comando CLI                        | `bitheim`                    |
-| Imagen principal                   | `ghcr.io/<org>/bitheim`      |
-| Fork de Bitcoin Core               | `bitheim-bitcoin-core`       |
-| Imagen del nodo Labnet             | `ghcr.io/<org>/bitheim-core` |
-| Red experimental                   | `labnet-v1`                  |
-| Archivo principal de configuración | `bitheim.toml`               |
-| Directorio local predeterminado    | `.bitheim/`                  |
+| Element                             | Name                         |
+| ----------------------------------- | ---------------------------- |
+| Project                             | `Bitheim`                    |
+| Main repository                     | `bitheim`                    |
+| Python package                      | `bitheim`                    |
+| CLI command                         | `bitheim`                    |
+| Main image                          | `ghcr.io/<org>/bitheim`      |
+| Bitcoin Core fork                   | `bitheim-bitcoin-core`       |
+| Labnet node image                   | `ghcr.io/<org>/bitheim-core` |
+| Experimental network                | `labnet-v1`                  |
+| Main configuration file             | `bitheim.toml`               |
+| Default local directory             | `.bitheim/`                  |
 
-## 2.3 Ejemplos de uso
+## 2.3 Usage Examples
 
 ```bash
 uv run bitheim doctor
@@ -86,7 +86,7 @@ uv run bitheim status
 uv run bitheim tui
 ```
 
-En una distribución Docker:
+In a Docker distribution:
 
 ```bash
 docker compose up -d
@@ -95,380 +95,380 @@ docker compose run --rm bitheim tui
 
 ---
 
-# 3. Visión del producto
+# 3. Product Vision
 
-Bitheim será una plataforma ligera, reproducible y extensible para desplegar, utilizar, observar y analizar redes privadas basadas en Bitcoin Core.
+Bitheim will be a lightweight, reproducible, and extensible platform for deploying, operating, observing, and analyzing private networks based on Bitcoin Core.
 
-El sistema permitirá:
+The system will allow:
 
-* ejecutar un nodo blockchain privado;
-* crear y administrar wallets;
-* realizar transacciones Bitcoin válidas;
-* observar bloques, mempool, UTXOs y peers;
-* participar en minería competitiva;
-* observar prueba de trabajo real;
-* utilizar una dificultad distribuida;
-* generar actividad sintética opcional;
-* ejecutar experimentos reproducibles;
-* capturar eventos y métricas;
-* consultar y exportar datos;
-* usar una TUI sin depender obligatoriamente de comandos;
-* acceder a una CLI y una consola RPC para uso avanzado;
-* desplegar la misma implementación en arquitecturas distintas.
+* running a private blockchain node;
+* creating and managing wallets;
+* executing valid Bitcoin transactions;
+* observing blocks, mempool, UTXOs, and peers;
+* participating in competitive mining;
+* observing real proof of work;
+* utilizing distributed difficulty;
+* generating optional synthetic activity;
+* executing reproducible experiments;
+* capturing events and metrics;
+* querying and exporting data;
+* using a TUI without necessarily depending on commands;
+* accessing a CLI and an RPC console for advanced usage;
+* deploying the same implementation across different architectures.
 
-Las monedas utilizadas no tendrán valor económico, pero las transacciones deberán ser auténticas desde el punto de vista del protocolo.
+The coins used will have no economic value, but transactions must be authentic from the protocol perspective.
 
-Las transacciones:
+Transactions will:
 
-* consumirán UTXOs reales;
-* estarán firmadas criptográficamente;
-* serán validadas por Bitcoin Core;
-* entrarán al mempool;
-* se propagarán entre peers;
-* serán incluidas en bloques;
-* recibirán confirmaciones;
-* modificarán balances;
-* podrán regresar al mempool después de una reorganización;
-* podrán quedar invalidadas por una cadena competidora.
+* spend real UTXOs;
+* be cryptographically signed;
+* be validated by Bitcoin Core;
+* enter the mempool;
+* propagate among peers;
+* be included in blocks;
+* receive confirmations;
+* modify balances;
+* potentially return to the mempool after a reorganization;
+* potentially be invalidated by a competing chain.
 
-Bitheim no será una simulación visual desconectada de Bitcoin.
+Bitheim will not be a visual simulation disconnected from Bitcoin.
 
-Será una capa de operación, experimentación y análisis construida alrededor de nodos reales.
-
----
-
-# 4. Antecedentes
-
-Bitheim surge del proyecto **Bitcoin Local Lab**, en el cual se desarrolló progresivamente:
-
-1. un nodo autónomo en `regtest`;
-2. una red P2P local de dos nodos;
-3. automatización mediante JSON-RPC;
-4. propagación de transacciones;
-5. simulación de forks;
-6. reorganizaciones de cadena;
-7. una malla distribuida entre equipos heterogéneos;
-8. instrumentación;
-9. documentación de reproducibilidad;
-10. resolución de problemas reales de red, memoria y contenedores.
-
-El laboratorio demostró la viabilidad técnica del concepto.
-
-Bitheim transformará ese laboratorio en un producto mantenible, desplegable y utilizable por personas que no necesariamente desean operar Bitcoin Core exclusivamente desde una terminal.
+It will be an operational, experimental, and analytical layer built around real nodes.
 
 ---
 
-# 5. Objetivos
+# 4. Background
 
-## 5.1 Objetivos funcionales
+Bitheim originates from the **Bitcoin Local Lab** project, in which the following was progressively developed:
 
-Bitheim deberá permitir:
+1. an autonomous node in `regtest`;
+2. a two-node local P2P network;
+3. JSON-RPC automation;
+4. transaction propagation;
+5. fork simulation;
+6. chain reorganizations;
+7. a distributed mesh across heterogeneous machines;
+8. instrumentation;
+9. reproducibility documentation;
+10. resolution of real network, memory, and container issues.
 
-* instalar y desplegar un nodo con configuración mínima;
-* unirse a una red privada existente;
-* crear y administrar wallets;
-* enviar y recibir monedas de laboratorio;
-* consultar balances y UTXOs;
-* observar la red P2P;
-* inspeccionar bloques y transacciones;
-* participar en minería;
-* generar actividad sintética;
-* ejecutar experimentos;
-* almacenar observaciones;
-* analizar resultados;
-* exportar datasets.
+The lab proved the technical feasibility of the concept.
 
-## 5.2 Objetivos educativos
+Bitheim will transform that lab into a maintainable, deployable product usable by people who do not necessarily wish to operate Bitcoin Core exclusively from a terminal.
 
-El producto deberá permitir observar:
+---
 
-* ciclo de vida de una transacción;
-* propagación P2P;
+# 5. Objectives
+
+## 5.1 Functional Objectives
+
+Bitheim must allow:
+
+* installing and deploying a node with minimal configuration;
+* joining an existing private network;
+* creating and managing wallets;
+* sending and receiving lab coins;
+* checking balances and UTXOs;
+* observing the P2P network;
+* inspecting blocks and transactions;
+* participating in mining;
+* generating synthetic activity;
+* running experiments;
+* storing observations;
+* analyzing results;
+* exporting datasets.
+
+## 5.2 Educational Objectives
+
+The product must allow observing:
+
+* transaction lifecycle;
+* P2P propagation;
 * mempool;
-* confirmaciones;
+* confirmations;
 * coinbase;
-* maduración;
+* maturity;
 * UTXOs;
-* minería;
+* mining;
 * nonce;
-* hash SHA-256d;
+* SHA-256d hash;
 * target;
-* dificultad;
+* difficulty;
 * chainwork;
 * forks;
-* reorganizaciones;
-* ajuste de dificultad;
-* impacto de latencia;
-* comportamiento de una red pequeña.
+* reorganizations;
+* difficulty adjustment;
+* latency impact;
+* behavior of a small network.
 
-## 5.3 Objetivos de ingeniería
+## 5.3 Engineering Objectives
 
-El proyecto deberá:
+The project must:
 
-* ser reproducible;
-* funcionar en `amd64` y `arm64`;
-* ser mantenible por dos personas;
-* seguir buenas prácticas actuales de Python;
-* utilizar `uv`;
-* contar con typing estricto;
-* poseer límites arquitectónicos claros;
-* aplicar seguridad por defecto;
-* contar con pruebas automatizadas;
-* producir releases verificables;
-* soportar actualización y rollback;
-* ser seguro para publicación open source.
+* be reproducible;
+* operate on `amd64` and `arm64`;
+* be maintainable by two people;
+* follow current Python best practices;
+* use `uv`;
+* feature strict typing;
+* possess clear architectural boundaries;
+* apply security by default;
+* include automated testing;
+* produce verifiable releases;
+* support upgrade and rollback;
+* be safe for open source publication.
 
 ---
 
-# 6. Principios rectores
+# 6. Guiding Principles
 
-## 6.1 Bitcoin Core conserva la autoridad de validación
+## 6.1 Bitcoin Core Retains Validation Authority
 
-Bitheim nunca deberá sustituir la validación de:
+Bitheim must never substitute the validation of:
 
-* bloques;
-* transacciones;
+* blocks;
+* transactions;
 * scripts;
 * UTXOs;
-* prueba de trabajo;
-* dificultad;
-* trabajo acumulado;
-* reorganizaciones.
+* proof of work;
+* difficulty;
+* accumulated work;
+* reorganizations.
 
-Bitheim puede:
+Bitheim may:
 
-* crear;
-* solicitar;
-* automatizar;
-* observar;
-* presentar;
-* registrar;
-* analizar.
+* create;
+* request;
+* automate;
+* observe;
+* present;
+* record;
+* analyze.
 
-Bitcoin Core será la autoridad final sobre la validez de los datos.
+Bitcoin Core will be the final authority on data validity.
 
 ---
 
-## 6.2 La complejidad será opcional
+## 6.2 Complexity Will Be Optional
 
-Un usuario deberá poder:
+A user must be able to:
 
-1. instalar Bitheim;
-2. importar una configuración;
-3. iniciar el nodo;
-4. crear una wallet;
-5. realizar una transacción;
-6. observar el resultado;
+1. install Bitheim;
+2. import a configuration;
+3. start the node;
+4. create a wallet;
+5. execute a transaction;
+6. observe the result;
 
-sin escribir comandos obligatoriamente.
+without being forced to type commands.
 
-El mismo usuario podrá posteriormente acceder a:
+The same user may subsequently access:
 
 * CLI;
-* consola RPC;
-* configuración;
+* RPC console;
+* configuration;
 * logs;
 * SQL;
-* datos sin procesar;
-* detalles de protocolo.
+* raw data;
+* protocol details.
 
 ---
 
-## 6.3 Automatización transparente
+## 6.3 Transparent Automation
 
-Toda acción importante iniciada desde la TUI deberá permitir consultar:
+Every significant action initiated from the TUI must allow inspecting:
 
-* caso de uso ejecutado;
-* RPC equivalente;
-* parámetros;
-* respuesta;
-* eventos;
-* modificaciones persistidas.
+* executed use case;
+* equivalent RPC call;
+* parameters;
+* response;
+* events;
+* persisted modifications.
 
-La TUI no deberá convertirse en una caja negra.
-
----
-
-## 6.4 Seguridad por defecto
-
-Las configuraciones predeterminadas deberán adoptar:
-
-* mínimo privilegio;
-* denegación por defecto;
-* RPC local;
-* separación de secretos;
-* imágenes inmutables;
-* versiones fijadas;
-* permisos restrictivos;
-* ausencia de telemetría remota;
-* exposición mínima de puertos;
-* sanitización de logs.
+The TUI must not become a black box.
 
 ---
 
-## 6.5 Diseño para dos usuarios, sin impedir crecimiento
+## 6.4 Security by Default
 
-Los únicos usuarios iniciales confirmados son los dos mantenedores.
+Default configurations must adopt:
 
-Por tanto:
-
-* no se optimizará prematuramente para cientos de participantes;
-* no se implementará infraestructura innecesaria;
-* no se introducirán microservicios sin justificación;
-* no se asumirá una organización grande.
-
-Sin embargo, el diseño evitará decisiones que impidan utilizar varios nodos o incorporar más participantes.
-
----
-
-## 6.6 Modularidad sin microservicios prematuros
-
-Bitheim será inicialmente un:
-
-> **Monolito modular con arquitectura hexagonal.**
-
-No se dividirá en microservicios mientras:
-
-* existan dos mantenedores;
-* se distribuya como una unidad;
-* los componentes compartan el mismo ciclo de release;
-* no exista una necesidad real de escalarlos de forma independiente.
+* least privilege;
+* deny by default;
+* local RPC;
+* separation of secrets;
+* immutable images;
+* pinned versions;
+* restrictive permissions;
+* absence of remote telemetry;
+* minimal port exposure;
+* log sanitization.
 
 ---
 
-## 6.7 Reproducibilidad
+## 6.5 Design for Two Users Without Precluding Growth
 
-Con la misma:
+The only confirmed initial users are the two maintainers.
 
-* versión;
-* configuración;
-* manifiesto;
-* escenario;
-* semilla;
-* estado inicial;
-* versión de Bitcoin Core;
+Therefore:
 
-los experimentos deberán producir resultados funcionalmente equivalentes.
+* it will not be prematurely optimized for hundreds of participants;
+* unnecessary infrastructure will not be implemented;
+* microservices will not be introduced without justification;
+* a large organization will not be assumed.
+
+However, the design will avoid decisions that prevent using multiple nodes or onboarding more participants.
 
 ---
 
-## 6.8 Open source seguro
+## 6.6 Modularity Without Premature Microservices
 
-Ningún artefacto público deberá contener:
+Bitheim will initially be a:
 
-* direcciones reales de la malla;
-* dominios privados;
-* nombres internos;
-* claves de Headscale;
-* claves privadas;
+> **Modular monolith with hexagonal architecture.**
+
+It will not be split into microservices as long as:
+
+* there are two maintainers;
+* it is distributed as a single unit;
+* components share the same release cycle;
+* there is no real need to scale them independently.
+
+---
+
+## 6.7 Reproducibility
+
+Given the same:
+
+* version;
+* configuration;
+* manifest;
+* scenario;
+* seed;
+* initial state;
+* Bitcoin Core version;
+
+experiments must produce functionally equivalent results.
+
+---
+
+## 6.8 Safe Open Source
+
+No public artifact must contain:
+
+* real mesh network addresses;
+* private domains;
+* internal names;
+* Headscale keys;
+* private keys;
 * seeds;
-* cookies RPC;
+* RPC cookies;
 * tokens;
-* configuraciones reales de OCI;
-* dumps locales;
-* rutas personales;
-* nombres de participantes;
-* direcciones de wallets utilizadas en entornos privados.
+* real OCI configurations;
+* local dumps;
+* personal paths;
+* participant names;
+* wallet addresses used in private environments.
 
 ---
 
-# 7. Alcance hasta `v1.0.0`
+# 7. Scope up to `v1.0.0`
 
-## 7.1 Incluido
+## 7.1 Included
 
-Bitheim incluirá antes de `v1.0.0`:
+Bitheim will include before `v1.0.0`:
 
-* proyecto Python administrado con `uv`;
-* distribución reproducible mediante Docker Compose;
-* imágenes multi-arquitectura;
-* gestión del ciclo de vida de Bitcoin Core;
-* configuración de nodos;
+* Python project managed with `uv`;
+* reproducible distribution via Docker Compose;
+* multi-architecture images;
+* Bitcoin Core lifecycle management;
+* node configuration;
 * wallets;
-* transacciones humanas;
+* human transactions;
 * TUI;
 * CLI;
-* consola RPC;
-* visualización de peers;
-* visualización de bloques;
-* visualización de mempool;
-* minería manual;
-* minería competitiva;
+* RPC console;
+* peer visualization;
+* block visualization;
+* mempool visualization;
+* manual mining;
+* competitive mining;
 * `labnet-v1`;
-* dificultad distribuida;
-* agentes sintéticos opcionales;
-* escenarios reproducibles;
-* recolección de eventos;
-* almacenamiento analítico;
-* exportación CSV;
-* exportación Parquet;
-* experimentos;
-* diagnóstico;
-* actualización;
+* distributed difficulty;
+* optional synthetic agents;
+* reproducible scenarios;
+* event collection;
+* analytical storage;
+* CSV export;
+* Parquet export;
+* experiments;
+* diagnostics;
+* update;
 * rollback;
-* documentación de usuario;
-* documentación de desarrollo;
-* pipeline seguro de releases.
+* user documentation;
+* development documentation;
+* secure release pipeline.
 
-## 7.2 Fuera de alcance
+## 7.2 Out of Scope
 
-No se implementará antes de `v1.0.0`:
+The following will not be implemented before `v1.0.0`:
 
-* instalación automática de Headscale;
-* administración de usuarios de Headscale;
-* creación automática de redes privadas;
+* automatic Headscale installation;
+* Headscale user administration;
+* automatic private network creation;
 * mainnet;
-* fondos reales;
+* real funds;
 * Lightning Network;
-* panel web;
-* aplicación móvil nativa;
+* web dashboard;
+* native mobile app;
 * Kubernetes;
 * Databricks;
-* conector nativo para Power BI;
-* autenticación multiusuario;
-* alta disponibilidad;
-* telemetría centralizada;
-* marketplace de plugins;
-* ejecución remota de RPC;
-* exposición pública de nodos.
+* native Power BI connector;
+* multi-user authentication;
+* high availability;
+* centralized telemetry;
+* plugin marketplace;
+* remote RPC execution;
+* public node exposure.
 
 ---
 
-# 8. Arquitectura principal
+# 8. Core Architecture
 
-## 8.1 Estilo arquitectónico
+## 8.1 Architectural Style
 
-Bitheim utilizará:
+Bitheim will use:
 
-> **Monolito modular con arquitectura hexagonal y separación por dominios.**
+> **Modular monolith with hexagonal architecture and domain separation.**
 
-El diseño combinará:
+The design will combine:
 
 * Ports and Adapters;
-* Domain-Driven Design ligero;
+* lightweight Domain-Driven Design;
 * Application Services;
-* separación pragmática entre commands y queries;
-* inversión de dependencias;
-* eventos internos tipados;
-* límites explícitos entre módulos.
+* pragmatic separation between commands and queries;
+* dependency inversion;
+* typed internal events;
+* explicit module boundaries.
 
-No se implementará DDD táctico completo cuando no aporte valor directo.
+Full tactical DDD will not be implemented where it provides no direct value.
 
-## 8.2 Razones
+## 8.2 Rationale
 
-Un monolito modular es apropiado porque:
+A modular monolith is appropriate because:
 
-* solo existen dos mantenedores;
-* la aplicación se distribuye como una unidad;
-* las operaciones son principalmente locales;
-* simplifica debugging;
-* simplifica releases;
-* reduce problemas distribuidos internos;
-* permite refactorizar sin coordinar servicios;
-* mantiene la posibilidad de extraer módulos en el futuro.
+* there are only two maintainers;
+* the application is distributed as a unit;
+* operations are primarily local;
+* it simplifies debugging;
+* it simplifies releases;
+* it reduces internal distributed problems;
+* it allows refactoring without coordinating multiple services;
+* it retains the ability to extract modules in the future.
 
-## 8.3 Arquitectura hexagonal
+## 8.3 Hexagonal Architecture
 
-El dominio no deberá depender directamente de:
+The domain must not depend directly on:
 
 * Bitcoin Core;
 * Docker;
@@ -476,34 +476,34 @@ El dominio no deberá depender directamente de:
 * DuckDB;
 * ZMQ;
 * `urllib`;
-* sistema operativo;
-* framework de configuración;
-* gestor de procesos.
+* operating system;
+* configuration framework;
+* process manager.
 
-Las dependencias externas se implementarán como adapters.
+External dependencies will be implemented as adapters.
 
 ---
 
-# 9. Arquitectura de ejecución
+# 9. Runtime Architecture
 
 ```text
 ┌────────────────────────── Host ────────────────────────────┐
 │                                                           │
 │ Headscale / Tailscale                                     │
-│ └── Fuera del alcance de Bitheim                          │
+│ └── Out of scope for Bitheim                              │
 │                                                           │
 │ Docker Compose                                            │
 │ ├── bitheim-core                                          │
 │ ├── bitheim-daemon                                        │
 │ ├── bitheim-tui                                           │
-│ ├── bitheim-miner             opcional                    │
-│ ├── bitheim-simulator         opcional                    │
-│ └── bitheim-analytics         opcional                    │
+│ ├── bitheim-miner             optional                    │
+│ ├── bitheim-simulator         optional                    │
+│ └── bitheim-analytics         optional                    │
 │                                                           │
 └───────────────────────────────────────────────────────────┘
 ```
 
-Todos los procesos de Bitheim utilizarán el mismo paquete Python y distintos entrypoints.
+All Bitheim processes will use the same Python package and distinct entrypoints:
 
 ```bash
 bitheim daemon
@@ -514,60 +514,60 @@ bitheim analytics
 bitheim doctor
 ```
 
-Esto evitará mantener aplicaciones separadas y divergentes.
+This avoids maintaining separate, divergent applications.
 
 ---
 
-# 10. Repositorios
+# 10. Repositories
 
-## 10.1 Repositorio principal: `bitheim`
+## 10.1 Main Repository: `bitheim`
 
-Contendrá:
+Contains:
 
-* aplicación Python;
+* Python application;
 * TUI;
 * CLI;
 * daemon;
-* minero;
-* simulador;
-* analítica;
-* configuraciones;
+* miner;
+* simulator;
+* analytics;
+* configurations;
 * Docker Compose;
-* documentación;
-* pruebas;
+* documentation;
+* tests;
 * pipelines;
-* escenarios.
+* scenarios.
 
 ## 10.2 Fork: `bitheim-bitcoin-core`
 
-Contendrá un fork mínimo de Bitcoin Core.
+Contains a minimal fork of Bitcoin Core.
 
-Solo deberá modificar lo necesario para:
+Must only modify what is necessary to:
 
-* registrar `labnet`;
-* definir génesis;
-* definir magic bytes;
-* definir puertos;
-* configurar `powLimit`;
-* habilitar reajuste;
-* definir tiempos;
-* identificar la red;
-* validar dificultad.
+* register `labnet`;
+* define genesis;
+* define magic bytes;
+* define ports;
+* configure `powLimit`;
+* enable retargeting;
+* define timing parameters;
+* identify the network;
+* validate difficulty.
 
-No deberá modificar innecesariamente:
+Must not unnecessarily modify:
 
 * wallets;
 * mempool;
 * scripts;
 * RPC;
-* serialización;
+* serialization;
 * P2P;
 * chain selection;
-* almacenamiento.
+* storage.
 
 ---
 
-# 11. Estructura del repositorio
+# 11. Repository Structure
 
 ```text
 bitheim/
@@ -629,61 +629,61 @@ bitheim/
 └── .gitignore
 ```
 
-Se utilizará `src-layout`.
+`src-layout` will be used.
 
 ---
 
-# 12. Gestión del proyecto Python con `uv`
+# 12. Python Project Management with `uv`
 
-## 12.1 Herramienta oficial
+## 12.1 Official Tool
 
-`uv` será la herramienta oficial para:
+`uv` will be the official tool for:
 
-* crear el proyecto;
-* administrar el entorno virtual;
-* instalar Python cuando sea necesario;
-* resolver dependencias;
-* bloquear versiones;
-* ejecutar comandos;
-* instalar grupos de desarrollo;
-* construir paquetes;
-* reproducir entornos.
+* creating the project;
+* managing the virtual environment;
+* installing Python when necessary;
+* resolving dependencies;
+* locking versions;
+* running commands;
+* installing development groups;
+* building packages;
+* reproducing environments.
 
-No se utilizará `pip install` directamente durante el flujo normal de desarrollo.
+`pip install` will not be used directly during the normal development workflow.
 
-No se instalarán dependencias del proyecto en el entorno global.
+Project dependencies will not be installed into the global environment.
 
-## 12.2 Inicialización
+## 12.2 Initialization
 
-El proyecto se inicializará mediante:
+The project is initialized via:
 
 ```bash
 uv init --package bitheim
 ```
 
-Se utilizará estructura de paquete en `src/`.
+Package structure in `src/` will be used.
 
-## 12.3 Entorno virtual
+## 12.3 Virtual Environment
 
-El entorno local será administrado por `uv`.
+The local environment will be managed by `uv`:
 
 ```bash
 uv sync
 ```
 
-Esto creará o actualizará `.venv/`.
+This will create or update `.venv/`.
 
-`.venv/` estará ignorado por Git.
+`.venv/` will be ignored by Git.
 
-## 12.4 Ejecución
+## 12.4 Execution
 
-Todos los comandos Python del proyecto se ejecutarán mediante:
+All Python commands for the project will be executed via:
 
 ```bash
 uv run <command>
 ```
 
-Ejemplos:
+Examples:
 
 ```bash
 uv run bitheim doctor
@@ -694,89 +694,89 @@ uv run ruff check .
 uv run mypy src
 ```
 
-## 12.5 Dependencias
+## 12.5 Dependencies
 
-Agregar dependencia de producción:
+Add a production dependency:
 
 ```bash
 uv add textual
 ```
 
-Agregar dependencia de desarrollo:
+Add a development dependency:
 
 ```bash
 uv add --dev pytest
 ```
 
-Eliminar dependencia:
+Remove a dependency:
 
 ```bash
 uv remove <package>
 ```
 
-No se editarán manualmente las dependencias del lockfile.
+Lockfile dependencies must not be edited manually.
 
 ## 12.6 Lockfile
 
-`uv.lock` deberá:
+`uv.lock` must:
 
-* versionarse;
-* actualizarse mediante `uv`;
-* revisarse en pull requests;
-* utilizarse en CI;
-* utilizarse en Docker;
-* ser la referencia de resolución reproducible.
+* be versioned;
+* be updated via `uv`;
+* be reviewed in pull requests;
+* be used in CI;
+* be used in Docker;
+* be the reference for reproducible resolution.
 
-## 12.7 Sincronización bloqueada
+## 12.7 Locked Synchronization
 
-En CI y builds se utilizará:
+In CI and builds:
 
 ```bash
 uv sync --locked
 ```
 
-Esto impedirá que un entorno cambie silenciosamente el lockfile.
+This prevents an environment from silently changing the lockfile.
 
-## 12.8 Instalación congelada
+## 12.8 Frozen Installation
 
-En contextos donde se requiera reproducibilidad estricta:
+In contexts requiring strict reproducibility:
 
 ```bash
 uv sync --frozen
 ```
 
-## 12.9 Grupos de dependencias
+## 12.9 Dependency Groups
 
-Como mínimo existirán:
+At a minimum, the following will exist:
 
-* dependencias de producción;
-* grupo `dev`;
-* grupo `test`;
-* grupo `docs`;
-* grupo `security`.
+* production dependencies;
+* `dev` group;
+* `test` group;
+* `docs` group;
+* `security` group.
 
-La división exacta se definirá en `pyproject.toml`.
+The exact division will be defined in `pyproject.toml`.
 
-## 12.10 Versión de Python
+## 12.10 Python Version
 
-`.python-version` declarará la versión utilizada por el proyecto.
+`.python-version` will declare the version used by the project.
 
-Ejemplo:
+Example:
 
 ```text
 3.13
 ```
 
-El flujo inicial podrá ser:
+The initial workflow may be:
 
 ```bash
 uv python install
 uv sync
 ```
 
-## 12.11 Bootstrap del desarrollador
+## 12.11 Developer Bootstrap
 
-Un nuevo contribuidor deberá poder ejecutar:
+A new contributor should be able to run:
 
 ```bash
 git clone <repository>
@@ -786,11 +786,11 @@ uv sync --all-groups
 uv run bitheim doctor
 ```
 
-## 12.12 Comandos de desarrollo
+## 12.12 Development Commands
 
-Podrán existir wrappers mediante `Makefile` o scripts, pero internamente utilizarán `uv`.
+Wrappers via `Makefile` or scripts may exist, but internally they will use `uv`.
 
-Ejemplo:
+Example:
 
 ```makefile
 check:
@@ -800,23 +800,23 @@ check:
 	uv run pytest
 ```
 
-`uv` seguirá siendo la fuente de verdad del entorno.
+`uv` will remain the source of truth for the environment.
 
 ## 12.13 Docker
 
-Los Dockerfiles utilizarán `uv` para instalar las dependencias.
+Dockerfiles will use `uv` to install dependencies.
 
-Principios:
+Principles:
 
-* copiar primero `pyproject.toml` y `uv.lock`;
-* usar `uv sync --locked`;
-* aprovechar cache de capas;
-* separar build y runtime;
-* no incluir dependencias de desarrollo en producción;
-* usar una imagen final mínima;
-* ejecutar como usuario no root.
+* copy `pyproject.toml` and `uv.lock` first;
+* use `uv sync --locked`;
+* leverage layer caching;
+* separate build and runtime;
+* do not include development dependencies in production;
+* use a minimal final image;
+* run as a non-root user.
 
-Ejemplo conceptual:
+Conceptual example:
 
 ```dockerfile
 COPY pyproject.toml uv.lock ./
@@ -827,7 +827,7 @@ COPY src/ ./src/
 
 ## 12.14 CI
 
-Los workflows utilizarán la misma secuencia que los desarrolladores:
+Workflows will use the same sequence as developers:
 
 ```bash
 uv sync --locked --all-groups
@@ -836,15 +836,15 @@ uv run mypy src
 uv run pytest
 ```
 
-No se mantendrá un `requirements.txt` manual paralelo.
+A parallel manual `requirements.txt` will not be maintained.
 
-Solo se generará uno cuando alguna herramienta externa lo requiera expresamente.
+One will only be generated when an external tool expressly requires it.
 
 ---
 
-# 13. Reglas de dependencia entre capas
+# 13. Layer Dependency Rules
 
-La dirección será:
+The direction will be:
 
 ```text
 Interfaces
@@ -854,7 +854,7 @@ Application
 Domain
 ```
 
-Los adapters de infraestructura implementarán ports definidos por la aplicación.
+Infrastructure adapters will implement ports defined by the application.
 
 ```text
 Infrastructure
@@ -864,21 +864,21 @@ Application Ports
 Domain
 ```
 
-El dominio nunca importará:
+Domain will never import:
 
 * Textual;
 * DuckDB;
 * ZMQ;
 * Docker SDK;
-* bibliotecas HTTP concretas;
-* controladores de procesos;
-* configuración del sistema operativo.
+* concrete HTTP libraries;
+* process controllers;
+* operating system configuration.
 
 ---
 
-# 14. Estructura interna de los módulos
+# 14. Internal Module Structure
 
-Cada módulo podrá contener:
+Each module may contain:
 
 ```text
 module/
@@ -900,42 +900,42 @@ module/
     └── mappers/
 ```
 
-No deberán crearse directorios o archivos vacíos únicamente por simetría.
+Empty directories or files must not be created solely for symmetry.
 
 ---
 
-# 15. Módulos funcionales
+# 15. Functional Modules
 
 ## 15.1 `bootstrap`
 
-Responsabilidades:
+Responsibilities:
 
-* inicialización;
-* contenedor de dependencias;
-* selección de adapters;
-* migraciones;
-* registro de handlers;
+* initialization;
+* dependency container;
+* adapter selection;
+* migrations;
+* handler registration;
 * startup;
 * shutdown.
 
-No contendrá lógica de negocio.
+Will contain no business logic.
 
 ---
 
 ## 15.2 `node`
 
-Responsabilidades:
+Responsibilities:
 
-* ciclo de vida del nodo;
-* configuración;
+* node lifecycle;
+* configuration;
 * health checks;
 * datadir;
-* estado de blockchain;
-* sincronización;
+* blockchain status;
+* synchronization;
 * logs;
-* compatibilidad de versiones.
+* version compatibility.
 
-Entidades:
+Entities:
 
 * `Node`
 * `NodeStatus`
@@ -954,59 +954,59 @@ Ports:
 
 ## 15.3 `wallet`
 
-Responsabilidades:
+Responsibilities:
 
-* creación;
-* carga;
-* direcciones;
+* creation;
+* loading;
+* addresses;
 * balances;
 * UTXOs;
-* transacciones;
-* historial;
+* transactions;
+* history;
 * coinbase maturity.
 
-Reglas:
+Rules:
 
-* ninguna clave privada saldrá del nodo;
-* Bitheim no persistirá seeds;
-* Bitheim no registrará secretos;
-* las wallets serán administradas mediante RPC local.
+* no private keys will leave the node;
+* Bitheim will not persist seeds;
+* Bitheim will not log secrets;
+* wallets will be managed via local RPC.
 
 ---
 
 ## 15.4 `network`
 
-Responsabilidades:
+Responsibilities:
 
 * peers;
-* conexiones;
-* topología;
-* latencia;
-* transporte;
+* connections;
+* topology;
+* latency;
+* transport;
 * bytes;
-* manifiestos;
+* manifests;
 * bootstrap peers;
-* identidad de red.
+* network identity.
 
-El módulo no configurará Headscale.
+The module will not configure Headscale.
 
 ---
 
 ## 15.5 `mining`
 
-Responsabilidades:
+Responsibilities:
 
-* minería manual;
-* minería competitiva;
-* plantillas;
+* manual mining;
+* competitive mining;
+* templates;
 * coinbase;
 * Merkle root;
-* encabezados;
+* headers;
 * nonces;
 * SHA-256d;
 * hashrate;
-* envío de bloques;
-* dificultad.
+* block submission;
+* difficulty.
 
 Backends:
 
@@ -1017,18 +1017,18 @@ Backends:
 
 ## 15.6 `activity`
 
-Responsabilidades:
+Responsibilities:
 
-* agentes sintéticos;
-* perfiles;
-* generación de transacciones;
-* procesos estocásticos;
-* montos;
+* synthetic agents;
+* profiles;
+* transaction generation;
+* stochastic processes;
+* amounts;
 * scheduling;
-* semillas;
-* etiquetado de origen.
+* seeds;
+* origin tagging.
 
-Orígenes:
+Origins:
 
 ```text
 human
@@ -1042,185 +1042,183 @@ faucet
 
 ## 15.7 `experiments`
 
-Responsabilidades:
+Responsibilities:
 
-* planes;
-* precondiciones;
-* ejecución;
+* plans;
+* preconditions;
+* execution;
 * checkpoints;
-* compensación;
-* resultados;
+* compensation;
+* results;
 * metadata;
-* reproducibilidad.
+* reproducibility.
 
-Experimentos incluidos:
+Included experiments:
 
-1. transferencia y confirmación;
-2. propagación;
-3. crecimiento de mempool;
-4. desconexión y resincronización;
-5. competencia minera;
-6. reorganización;
-7. dificultad;
-8. consolidación de UTXOs.
+1. transfer and confirmation;
+2. propagation;
+3. mempool growth;
+4. disconnection and resynchronization;
+5. mining competition;
+6. reorganization;
+7. difficulty;
+8. UTXO consolidation.
 
 ---
 
 ## 15.8 `analytics`
 
-Responsabilidades:
+Responsibilities:
 
-* eventos;
+* events;
 * snapshots;
-* esquema analítico;
-* consultas;
+* analytical schema;
+* queries;
 * datasets;
-* métricas;
-* exportaciones.
+* metrics;
+* exports.
 
-Tecnologías:
+Technologies:
 
 * DuckDB;
 * Parquet;
-* SQLite, solo si el estado operativo lo requiere.
+* SQLite, only if operational state requires it.
 
 ---
 
 ## 15.9 `runtime`
 
-Responsabilidades:
+Responsibilities:
 
-* procesos;
+* processes;
 * scheduler;
-* tareas;
-* señales;
+* tasks;
+* signals;
 * graceful shutdown;
 * locks;
-* supervisión;
-* recuperación;
-* comunicación local.
+* supervision;
+* recovery;
+* local communication.
 
 ---
 
 ## 15.10 `interfaces`
 
-Contendrá:
+Contains:
 
 * CLI;
 * TUI;
-* presentación;
-* mapping de errores;
+* presentation;
+* error mapping;
 * DTOs.
 
-No ejecutará RPC directamente.
+Will not execute RPC directly.
 
 ---
 
 ## 15.11 `shared`
 
-Solo incluirá elementos realmente compartidos:
+Will only include genuinely shared elements:
 
 * `Clock`;
 * `EventBus`;
-* identificadores;
+* identifiers;
 * satoshis;
-* errores base;
-* serialización;
-* utilidades verificadas.
+* base errors;
+* serialization;
+* verified utilities.
 
-No será un depósito genérico de funciones.
+Will not be a generic dumping ground for helper functions.
 
 ---
 
-# 16. Procesos
+# 16. Processes
 
 ## 16.1 Daemon
 
-`bitheim daemon` será el proceso principal.
+`bitheim daemon` will be the main process.
 
-Responsabilidades:
+Responsibilities:
 
-* estado operativo;
-* casos de uso;
-* supervisión;
-* eventos;
-* tareas;
-* API local.
+* operational state;
+* use cases;
+* supervision;
+* events;
+* tasks;
+* local API.
 
-## 16.2 API local
+## 16.2 Local API
 
-La TUI y CLI se comunicarán mediante:
+TUI and CLI will communicate via:
 
-* Unix Domain Socket en Linux/macOS;
-* mecanismo local equivalente en Windows/WSL2;
-* HTTP loopback como fallback.
+* Unix Domain Socket on Linux/macOS;
+* equivalent local mechanism on Windows/WSL2;
+* HTTP loopback as fallback.
 
-Nunca se expondrá a la malla por defecto.
+Will never be exposed to the mesh network by default.
 
 ## 16.3 TUI
 
-La TUI será un cliente descartable.
+The TUI will be a disposable client.
 
-Cerrar la TUI no detendrá:
+Closing the TUI will not stop:
 
-* nodo;
-* minero;
-* simulador;
-* recolección;
-* analítica.
+* node;
+* miner;
+* simulator;
+* collection;
+* analytics.
 
 ---
 
-# 17. Red blockchain
+# 17. Blockchain Network
 
-## 17.1 Etapa inicial: `regtest`
+## 17.1 Initial Stage: `regtest`
 
-Se utilizará para desarrollar:
+Used to develop:
 
-* nodo;
+* node;
 * wallets;
 * TUI;
-* transacciones;
+* transactions;
 * RPC;
-* analítica;
-* simulador;
-* motor minero;
-* actualizaciones.
+* analytics;
+* simulator;
+* mining engine;
+* updates.
 
-## 17.2 Etapa objetivo: `labnet-v1`
+## 17.2 Target Stage: `labnet-v1`
 
-Tendrá:
+Will feature:
 
-* génesis propio;
-* identificador propio;
-* magic bytes propios;
-* puerto propio;
-* monedas sin valor;
-* PoW obligatorio;
-* dificultad inicial;
-* reajuste;
-* validación distribuida;
-* cadena independiente.
+* custom genesis;
+* custom identifier;
+* custom magic bytes;
+* custom port;
+* worthless coins;
+* mandatory PoW;
+* initial difficulty;
+* retargeting;
+* distributed validation;
+* independent chain.
 
 ---
 
-# 18. Dificultad distribuida
+# 18. Distributed Difficulty
 
-## 18.1 Regla
+## 18.1 Rule
 
-Cada nodo calculará independientemente el target esperado.
+Each node will independently compute the expected target.
 
-Ninguna autoridad central podrá cambiar la dificultad durante la operación.
+No central authority can change difficulty during operation.
 
-Un bloque será aceptado únicamente cuando:
+A block will only be accepted when:
 
-[
-SHA256d(header) \leq target
-]
+$$SHA256d(header) \leq target$$
 
-y `nBits` represente el target esperado.
+and `nBits` represents the expected target.
 
-## 18.2 Parámetros iniciales
+## 18.2 Initial Parameters
 
 ```yaml
 target_spacing_seconds: 30
@@ -1231,43 +1229,31 @@ allow_min_difficulty_blocks: false
 no_retargeting: false
 ```
 
-## 18.3 Ajuste
+## 18.3 Adjustment
 
-[
-target_{new}
-============
+$$target_{new} = target_{old} \times \frac{actual\ timespan}{expected\ timespan}$$
 
-target_{old}
-\times
-\frac{actual\ timespan}
-{expected\ timespan}
-]
+With boundaries:
 
-Con límites:
+$$\frac{expected}{4} \leq actual \leq 4 \times expected$$
 
-[
-\frac{expected}{4}
-\leq actual
-\leq 4 \times expected
-]
+The target will never exceed `powLimit`.
 
-El target nunca superará `powLimit`.
+## 18.4 Future Changes
 
-## 18.4 Cambios futuros
-
-Cualquier cambio incompatible requerirá:
+Any incompatible change will require:
 
 * `labnet-v2`;
-* red nueva; o
-* mecanismo de activación explícito.
+* a new network; or
+* an explicit activation mechanism.
 
-Hasta `v1.0.0`, se creará una red nueva.
+Until `v1.0.0`, a new network will be created.
 
 ---
 
-# 19. Manifiesto de red
+# 19. Network Manifest
 
-Ejemplo:
+Example:
 
 ```yaml
 format_version: 1
@@ -1288,51 +1274,51 @@ features:
   analytics_enabled: true
 ```
 
-Los manifiestos reales permanecerán fuera del repositorio.
+Real manifests will remain outside the repository.
 
 ---
 
-# 20. Actividad humana y sintética
+# 20. Human and Synthetic Activity
 
-Ambas coexistirán.
+Both will coexist.
 
 ```text
 Human wallet ───────┐
-                    ├── Bitcoin Core ── mempool ── bloques
+                    ├── Bitcoin Core ── mempool ── blocks
 Synthetic agent ────┘
 ```
 
-Bitcoin Core tratará ambas como transacciones reales.
+Bitcoin Core will treat both as real transactions.
 
-Bitheim conservará metadata analítica sobre el origen.
+Bitheim will retain analytical metadata regarding origin.
 
-## 20.1 Modelos incluidos
+## 20.1 Included Models
 
-* Poisson homogéneo;
-* Poisson por franjas;
-* cantidades lognormales;
-* pagos recurrentes;
+* homogeneous Poisson;
+* time-slotted Poisson;
+* lognormal amounts;
+* recurring payments;
 * retail;
-* comerciante;
-* nómina;
-* exchange simulado;
+* merchant;
+* payroll;
+* simulated exchange;
 * whale;
-* agente de estrés.
+* stress agent.
 
-## 20.2 Reproducibilidad
+## 20.2 Reproducibility
 
 ```yaml
 random_seed: 12345
 duration_seconds: 3600
 ```
 
-La fuente aleatoria será inyectable.
+The random source will be injectable.
 
 ---
 
-# 21. Almacenamiento analítico
+# 21. Analytical Storage
 
-## 21.1 Tablas mínimas
+## 21.1 Minimum Tables
 
 ```text
 nodes
@@ -1358,34 +1344,34 @@ system_metrics
 
 * UTC;
 * timezone-aware;
-* ISO 8601 al exportar;
-* precisión documentada.
+* ISO 8601 when exporting;
+* documented precision.
 
-## 21.3 Datos sensibles
+## 21.3 Sensitive Data
 
-No almacenar:
+Do not store:
 
-* claves;
+* keys;
 * seeds;
 * cookies;
 * passwords;
 * tokens;
-* rutas personales;
-* IP públicas sin consentimiento.
+* personal paths;
+* public IPs without consent.
 
 ---
 
-# 22. Estándares Python
+# 22. Python Standards
 
-## 22.1 Versión
+## 22.1 Version
 
-La línea inicial utilizará Python 3.13.
+The initial baseline will use Python 3.13.
 
-La versión mínima soportada será declarada en `pyproject.toml`.
+The minimum supported version will be declared in `pyproject.toml`.
 
 ## 22.2 Packaging
 
-Se utilizará:
+The following will be used:
 
 * `pyproject.toml`;
 * `src-layout`;
@@ -1396,7 +1382,7 @@ Se utilizará:
 
 ## 22.3 PEPs
 
-El código seguirá:
+Code will follow:
 
 * PEP 8;
 * PEP 257;
@@ -1404,61 +1390,61 @@ El código seguirá:
 * PEP 440;
 * PEP 621.
 
-## 22.4 Código Pythonico
+## 22.4 Pythonic Code
 
-Se preferirá:
+Preference will be given to:
 
-* composición;
+* composition;
 * dataclasses;
 * enums;
 * context managers;
-* iteradores;
+* iterators;
 * `pathlib`;
-* excepciones específicas;
-* protocolos;
-* value objects inmutables;
-* satoshis enteros;
-* `Decimal` cuando sea necesario.
+* specific exceptions;
+* protocols;
+* immutable value objects;
+* integer satoshis;
+* `Decimal` when necessary.
 
-Nunca se usarán `float` para cantidades monetarias.
+`float` must never be used for monetary amounts.
 
 ## 22.5 Typing
 
-Todo el código de producción estará tipado.
+All production code will be typed.
 
-Reglas:
+Rules:
 
-* evitar `Any`;
-* justificar `# type: ignore`;
-* validar JSON;
-* DTOs tipados;
-* interfaces explícitas;
-* strict typing en CI.
+* avoid `Any`;
+* justify `# type: ignore`;
+* validate JSON;
+* typed DTOs;
+* explicit interfaces;
+* strict typing in CI.
 
-## 22.6 Funciones
+## 22.6 Functions
 
-Las funciones deberán:
+Functions must:
 
-* tener responsabilidad clara;
-* evitar efectos secundarios ocultos;
-* recibir dependencias explícitas;
-* evitar booleanos ambiguos;
-* devolver tipos predecibles.
+* have clear responsibility;
+* avoid hidden side effects;
+* receive explicit dependencies;
+* avoid ambiguous booleans;
+* return predictable types.
 
 ## 22.7 Docstrings
 
-Explicarán:
+Will explain:
 
-* contrato;
-* invariantes;
-* errores;
-* efectos secundarios.
+* contract;
+* invariants;
+* errors;
+* side effects.
 
-No repetirán el código.
+Will not simply repeat the code.
 
 ---
 
-# 23. Manejo de errores
+# 23. Error Handling
 
 ```text
 BitheimError
@@ -1472,92 +1458,92 @@ BitheimError
 └── SecurityError
 ```
 
-Los adapters traducirán errores externos.
+Adapters will translate external errors.
 
-Los stack traces solo se mostrarán con modo debug.
+Stack traces will only be displayed in debug mode.
 
 ---
 
 # 24. Logging
 
-Los logs contendrán:
+Logs will contain:
 
-* timestamp UTC;
-* nivel;
-* módulo;
-* evento;
+* UTC timestamp;
+* level;
+* module;
+* event;
 * correlation ID;
 * node ID;
 * experiment ID.
 
-Nunca contendrán:
+Must never contain:
 
 * cookies;
-* claves;
+* keys;
 * seeds;
 * passwords;
 * `Authorization`;
-* secretos;
-* configuración no sanitizada.
+* secrets;
+* unsanitized configuration.
 
 ---
 
-# 25. Seguridad
+# 25. Security
 
-## 25.1 Modelo de amenazas
+## 25.1 Threat Model
 
-Se documentarán:
+The following will be documented:
 
-* participante curioso;
-* nodo mal configurado;
-* imagen comprometida;
-* dependencia vulnerable;
-* filtración en Git;
-* RPC expuesto;
-* manifiesto manipulado;
-* escenario malicioso;
-* acceso local;
+* curious participant;
+* misconfigured node;
+* compromised image;
+* vulnerable dependency;
+* Git leak;
+* exposed RPC;
+* manipulated manifest;
+* malicious scenario;
+* local access;
 * supply-chain attacks.
 
 ## 25.2 RPC
 
 RPC:
 
-* solo localhost;
+* localhost only;
 * cookie authentication;
-* nunca enviada por red;
-* nunca registrada;
-* leída bajo demanda;
-* mantenida en memoria el mínimo tiempo.
+* never sent over network;
+* never logged;
+* read on demand;
+* held in memory for minimum duration.
 
 ## 25.3 P2P
 
-Solo se publicará el puerto P2P.
+Only the P2P port will be published.
 
-El bind será explícito.
+Bind must be explicit.
 
-No se usará `0.0.0.0` como valor público predeterminado.
+`0.0.0.0` will not be used as default public value.
 
-## 25.4 Contenedores
+## 25.4 Containers
 
-* usuario no root;
-* root filesystem de solo lectura cuando sea posible;
-* capabilities eliminadas;
+* non-root user;
+* read-only root filesystem when possible;
+* dropped capabilities;
 * `no-new-privileges`;
 * health checks;
-* límites;
-* sin modo privilegiado;
-* sin Docker socket.
+* limits;
+* no privileged mode;
+* no Docker socket.
 
-## 25.5 Secretos
+## 25.5 Secrets
 
-No deberán almacenarse en:
+Must not be stored in:
 
 * Dockerfile;
 * build args;
-* repositorio;
-* imágenes;
-* `.env` versionado.
+* repository;
+* images;
+* versioned `.env`.
 
 ## 25.6 Gitignore
 
@@ -1585,33 +1571,33 @@ backups/
 
 ---
 
-# 26. Dependencias
+# 26. Dependencies
 
-Toda dependencia deberá:
+Every dependency must:
 
-* tener propósito;
-* estar mantenida;
-* tener licencia compatible;
-* estar declarada mediante `uv`;
-* quedar fijada en `uv.lock`;
-* pasar revisión.
+* have a purpose;
+* be maintained;
+* have a compatible license;
+* be declared via `uv`;
+* be pinned in `uv.lock`;
+* pass review.
 
-Una PR que agregue una dependencia deberá explicar:
+A PR introducing a dependency must explain:
 
-* problema;
-* alternativas;
-* impacto;
-* licencia;
-* riesgo;
-* estrategia de eliminación.
+* problem;
+* alternatives;
+* impact;
+* license;
+* risk;
+* removal strategy.
 
 ---
 
-# 27. Herramientas de calidad
+# 27. Quality Tooling
 
-La configuración vivirá en `pyproject.toml`.
+Configuration will live in `pyproject.toml`.
 
-Categorías obligatorias:
+Mandatory categories:
 
 * formatting;
 * linting;
@@ -1624,7 +1610,7 @@ Categorías obligatorias:
 * Dockerfile validation;
 * YAML/JSON validation.
 
-Comandos:
+Commands:
 
 ```bash
 uv run ruff format --check .
@@ -1646,92 +1632,92 @@ make build
 
 # 28. Testing
 
-## 28.1 Unit tests
+## 28.1 Unit Tests
 
-Cubrirán:
+Will cover:
 
-* dominio;
+* domain;
 * value objects;
-* políticas;
-* dificultad;
-* minería;
-* serialización;
+* policies;
+* difficulty;
+* mining;
+* serialization;
 * random generators;
 * handlers.
 
-## 28.2 Integration tests
+## 28.2 Integration Tests
 
-Cubrirán:
+Will cover:
 
 * RPC;
 * DuckDB;
 * ZMQ;
 * filesystem;
 * daemon;
-* migraciones.
+* migrations.
 
-## 28.3 Contract tests
+## 28.3 Contract Tests
 
-Cubrirán:
+Will cover:
 
 * Bitheim ↔ Bitcoin Core;
 * TUI ↔ daemon;
 * manifests ↔ schemas;
 * scenarios ↔ runner;
-* exportadores.
+* exporters.
 
-## 28.4 End-to-end tests
+## 28.4 End-to-End Tests
 
-Levantarán redes efímeras de:
+Will spin up ephemeral networks of:
 
-* un nodo;
-* dos nodos;
-* tres nodos.
+* one node;
+* two nodes;
+* three nodes.
 
-Validarán:
+Will validate:
 
 * wallets;
-* transacciones;
-* minería;
-* propagación;
+* transactions;
+* mining;
+* propagation;
 * reorg;
 * retarget;
-* actualizaciones.
+* updates.
 
-## 28.5 Security tests
+## 28.5 Security Tests
 
-Validarán:
+Will validate:
 
-* RPC cerrado;
-* permisos;
-* secretos;
+* closed RPC;
+* permissions;
+* secrets;
 * path traversal;
-* contenedores no root;
-* puertos.
+* non-root containers;
+* ports.
 
-## 28.6 Property-based testing
+## 28.6 Property-Based Testing
 
-Para dificultad:
+For difficulty:
 
-* mismo historial → mismo target;
+* same history → same target;
 * target ≤ `powLimit`;
-* ajuste limitado;
-* bloques rápidos → más dificultad;
-* bloques lentos → menos dificultad;
-* hash alto → rechazo;
-* chainwork monotónico.
+* bounded adjustment;
+* fast blocks → higher difficulty;
+* slow blocks → lower difficulty;
+* high hash → rejection;
+* monotonic chainwork.
 
-## 28.7 Cobertura
+## 28.7 Coverage
 
-Objetivos:
+Targets:
 
-* dominio: 95%;
-* dificultad: ramas relevantes completas;
-* total inicial: 85%.
+* domain: 95%;
+* difficulty: full relevant branches;
+* initial total: 85%.
 
 ---
 
-# 29. Desarrollo local
+# 29. Local Development
 
 ## 29.1 Bootstrap
 
@@ -1743,7 +1729,7 @@ uv sync --all-groups
 uv run bitheim doctor
 ```
 
-## 29.2 Ejecución
+## 29.2 Execution
 
 ```bash
 uv run bitheim start
@@ -1756,7 +1742,7 @@ uv run bitheim tui
 uv run pytest
 ```
 
-## 29.4 Datos locales
+## 29.4 Local Data
 
 ```text
 .local/
@@ -1771,12 +1757,12 @@ uv run pytest
 
 # 30. Docker
 
-## 30.1 Arquitecturas
+## 30.1 Architectures
 
 * `linux/amd64`;
 * `linux/arm64`.
 
-## 30.2 Perfiles
+## 30.2 Profiles
 
 ```text
 default
@@ -1786,7 +1772,7 @@ analytics
 development
 ```
 
-## 30.3 Ejemplos
+## 30.3 Examples
 
 ```bash
 docker compose up -d
@@ -1800,16 +1786,16 @@ docker compose \
   up -d
 ```
 
-## 30.4 Versiones
+## 30.4 Versions
 
-No se usará `latest`.
+`latest` will not be used.
 
 ```yaml
 image: ghcr.io/example/bitheim:0.4.0
 image: ghcr.io/example/bitheim-core:31.1-labnet.1
 ```
 
-## 30.5 Persistencia
+## 30.5 Persistence
 
 ```text
 bitcoin-data
@@ -1823,7 +1809,7 @@ exports
 
 # 31. TUI
 
-Vistas:
+Views:
 
 ```text
 Overview
@@ -1842,13 +1828,13 @@ Settings
 RPC Console
 ```
 
-La TUI deberá:
+The TUI must:
 
-* funcionar sin color;
-* soportar terminales pequeñas;
-* documentar atajos;
-* confirmar acciones destructivas;
-* mostrar errores accionables.
+* work without color;
+* support small terminals;
+* document shortcuts;
+* confirm destructive actions;
+* show actionable errors.
 
 ---
 
@@ -1873,48 +1859,48 @@ bitheim update check
 bitheim update apply
 ```
 
-Desde desarrollo:
+From development:
 
 ```bash
 uv run bitheim status
 ```
 
-Salidas:
+Outputs:
 
 * `human`;
 * `json`.
 
 ---
 
-# 33. Configuración
+# 33. Configuration
 
-Prioridad:
+Priority:
 
 ```text
 defaults
 → bitheim.toml
-→ variables permitidas
+→ allowed variables
 → CLI flags
 ```
 
-No se admitirán secretos mediante flags.
+Secrets will not be accepted via flags.
 
-La aplicación fallará ante:
+The application will fail on:
 
-* campos inválidos;
-* paths inseguros;
-* puertos inválidos;
-* IP pública inesperada;
-* protocolo incompatible;
-* RPC expuesto.
+* invalid fields;
+* insecure paths;
+* invalid ports;
+* unexpected public IP;
+* incompatible protocol;
+* exposed RPC.
 
 ---
 
-# 34. Versionado
+# 34. Versioning
 
-Se utilizará Semantic Versioning.
+Semantic Versioning will be used.
 
-Se versionarán separadamente:
+The following will be versioned separately:
 
 ```text
 Bitheim version
@@ -1924,7 +1910,7 @@ Manifest format version
 Analytics schema version
 ```
 
-Ejemplo:
+Example:
 
 ```yaml
 bitheim_version: 0.6.0
@@ -1939,48 +1925,48 @@ analytics_schema: 4
 
 # 35. Git
 
-## 35.1 Flujo
+## 35.1 Workflow
 
-Trunk-based development ligero:
+Lightweight trunk-based development:
 
-* `main` siempre integrable;
-* ramas cortas;
+* `main` always deployable;
+* short-lived branches;
 * pull requests;
 * feature flags.
 
-## 35.2 Pull requests
+## 35.2 Pull Requests
 
-Toda PR incluirá:
+Every PR will include:
 
-* problema;
-* solución;
-* riesgos;
-* pruebas;
-* impacto arquitectónico;
-* impacto de seguridad;
-* documentación.
+* problem;
+* solution;
+* risks;
+* tests;
+* architectural impact;
+* security impact;
+* documentation.
 
-No podrá fusionarse con:
+Cannot be merged with:
 
-* CI fallando;
-* secretos;
-* review pendiente;
-* vulnerabilidad crítica;
-* cambio arquitectónico sin ADR.
+* failing CI;
+* secrets;
+* pending review;
+* critical vulnerability;
+* architectural change without ADR.
 
-## 35.3 Revisión
+## 35.3 Review
 
-Cambios de:
+Changes to:
 
-* consenso;
-* seguridad;
+* consensus;
+* security;
 * wallets;
 * releases;
 * Docker;
 * manifests;
-* migraciones;
+* migrations;
 
-requerirán revisión de ambos mantenedores.
+will require review by both maintainers.
 
 ---
 
@@ -1998,19 +1984,19 @@ ADR-0008: Multi-Architecture Images
 ADR-0009: Project Naming — Bitheim
 ```
 
-Cada ADR contendrá:
+Each ADR will contain:
 
-* contexto;
-* decisión;
-* alternativas;
-* consecuencias;
-* estado.
+* context;
+* decision;
+* alternatives;
+* consequences;
+* status.
 
 ---
 
 # 37. CI/CD
 
-## 37.1 Pull request
+## 37.1 Pull Request
 
 1. `uv sync --locked`;
 2. format check;
@@ -2028,9 +2014,9 @@ Cada ADR contendrá:
 
 ## 37.2 Main
 
-Además:
+Additionally:
 
-* E2E multi-nodo;
+* multi-node E2E;
 * `amd64`;
 * `arm64`;
 * reorg;
@@ -2040,42 +2026,42 @@ Además:
 
 ## 37.3 Release
 
-1. validar tag;
-2. generar changelog;
-3. ejecutar suite;
-4. construir imágenes;
-5. construir wheel;
-6. generar SBOM;
-7. escanear;
-8. firmar;
-9. generar provenance;
-10. publicar RC;
+1. validate tag;
+2. generate changelog;
+3. run test suite;
+4. build images;
+5. build wheel;
+6. generate SBOM;
+7. scan;
+8. sign;
+9. generate provenance;
+10. publish RC;
 11. smoke test;
-12. promoción manual.
+12. manual promotion.
 
 ---
 
-# 38. Supply-chain security
+# 38. Supply-Chain Security
 
-Antes de `v1.0.0`:
+Before `v1.0.0`:
 
-* dependencias fijadas;
+* pinned dependencies;
 * `uv.lock`;
 * dependency review;
 * SBOM;
-* imágenes firmadas;
+* signed images;
 * provenance;
-* GitHub Actions fijadas;
-* permisos mínimos;
+* pinned GitHub Actions;
+* minimal permissions;
 * branch protection;
-* escaneo de contenedores;
+* container scanning;
 * OpenSSF Scorecard.
 
 ---
 
-# 39. Releases y actualizaciones
+# 39. Releases and Updates
 
-## 39.1 Canales
+## 39.1 Channels
 
 ```text
 dev
@@ -2085,123 +2071,123 @@ rc
 stable
 ```
 
-## 39.2 Proceso
+## 39.2 Process
 
 ```text
-1. Comprobar compatibilidad.
-2. Mostrar notas.
-3. Verificar firma.
-4. Crear backup.
-5. Descargar artefactos.
-6. Validar espacio.
-7. Detener procesos.
-8. Migrar.
-9. Iniciar.
-10. Ejecutar health checks.
-11. Confirmar.
-12. Rollback si falla.
+1. Verify compatibility.
+2. Display release notes.
+3. Verify signature.
+4. Create backup.
+5. Download artifacts.
+6. Validate disk space.
+7. Stop processes.
+8. Migrate.
+9. Start.
+10. Run health checks.
+11. Confirm.
+12. Rollback if failure occurs.
 ```
 
-Ninguna actualización ordinaria cambiará silenciosamente `labnet-v1`.
+No regular update will silently alter `labnet-v1`.
 
 ---
 
-# 40. Roadmap hasta `v1.0.0`
+# 40. Roadmap up to `v1.0.0`
 
 ## `v0.1.0` — Foundation
 
-### Entregables
+### Deliverables
 
-* repositorio `bitheim`;
-* proyecto administrado por `uv`;
+* `bitheim` repository;
+* project managed by `uv`;
 * `pyproject.toml`;
 * `uv.lock`;
 * `.python-version`;
 * `src-layout`;
-* monolito modular;
-* arquitectura hexagonal;
-* CLI mínima;
-* configuración;
+* modular monolith;
+* hexagonal architecture;
+* minimal CLI;
+* configuration;
 * logging;
 * CI;
 * Docker;
-* documentación;
-* políticas open source;
+* documentation;
+* open source policies;
 * ADRs.
 
-### Aceptación
+### Acceptance
 
-* `uv sync` reproduce el entorno;
-* `uv run bitheim --help` funciona;
-* imágenes `amd64` y `arm64`;
-* CI obligatorio;
-* cero secretos.
+* `uv sync` reproduces the environment;
+* `uv run bitheim --help` works;
+* `amd64` and `arm64` images;
+* mandatory CI;
+* zero secrets.
 
 ---
 
 ## `v0.2.0` — Managed Regtest Node
 
-### Entregables
+### Deliverables
 
-* gestión de Bitcoin Core;
+* Bitcoin Core management;
 * datadir;
 * health;
 * RPC cookie;
 * wallet;
-* transacciones humanas;
-* bloques;
+* human transactions;
+* blocks;
 * mempool;
 * peers;
-* CLI JSON;
-* TUI básica.
+* JSON CLI;
+* basic TUI.
 
-### Aceptación
+### Acceptance
 
-Dos usuarios pueden levantar nodos, conectarlos, crear wallets y realizar una transacción.
+Two users can start nodes, connect them, create wallets, and execute a transaction.
 
 ---
 
 ## `v0.3.0` — Analytics Foundation
 
-### Entregables
+### Deliverables
 
-* recolector;
-* eventos;
+* collector;
+* events;
 * DuckDB;
 * snapshots;
 * CSV;
 * Parquet;
-* consultas;
-* paneles TUI.
+* queries;
+* TUI panels.
 
-### Aceptación
+### Acceptance
 
-Una transacción puede seguirse desde su creación hasta su confirmación.
+A transaction can be tracked from creation to confirmation.
 
 ---
 
 ## `v0.4.0` — Synthetic Activity
 
-### Entregables
+### Deliverables
 
-* agentes;
+* agents;
 * scheduler;
 * Poisson;
-* montos;
+* amounts;
 * seeds;
-* perfiles;
-* escenarios;
-* origen.
+* profiles;
+* scenarios;
+* origin.
 
-### Aceptación
+### Acceptance
 
-Un escenario genera transacciones Bitcoin válidas y reproducibles.
+A scenario generates valid, reproducible Bitcoin transactions.
 
 ---
 
 ## `v0.5.0` — External PoW Miner
 
-### Entregables
+### Deliverables
 
 * `getblocktemplate`;
 * coinbase;
@@ -2211,54 +2197,54 @@ Un escenario genera transacciones Bitcoin válidas y reproducibles.
 * workers;
 * hashrate;
 * `submitblock`;
-* límites.
+* limits.
 
-### Aceptación
+### Acceptance
 
-Dos mineros compiten por producir un bloque.
+Two miners compete to produce a block.
 
 ---
 
 ## `v0.6.0` — Labnet Prototype
 
-### Entregables
+### Deliverables
 
-* fork mínimo;
-* génesis;
+* minimal fork;
+* genesis;
 * magic bytes;
-* puertos;
-* PoW obligatorio;
+* ports;
+* mandatory PoW;
 * retarget;
 * manifest;
-* pruebas.
+* tests.
 
-### Aceptación
+### Acceptance
 
-Un bloque con PoW insuficiente es rechazado por todos los nodos.
+A block with insufficient PoW is rejected by all nodes.
 
 ---
 
 ## `v0.7.0` — Distributed Mining
 
-### Entregables
+### Deliverables
 
-* perfiles;
-* dificultad visible;
+* profiles;
+* visible difficulty;
 * retarget;
 * stale blocks;
 * reorgs;
-* métricas;
-* cambio de hashrate.
+* metrics;
+* hashrate change.
 
-### Aceptación
+### Acceptance
 
-Dos equipos diferentes mantienen una cadena con dificultad distribuida.
+Two different teams maintain a chain with distributed difficulty.
 
 ---
 
 ## `v0.8.0` — Experiment Workbench
 
-### Entregables
+### Deliverables
 
 * runner;
 * transfer;
@@ -2269,17 +2255,17 @@ Dos equipos diferentes mantienen una cadena con dificultad distribuida.
 * UTXO consolidation;
 * difficulty experiment;
 * checkpoints;
-* reportes.
+* reports.
 
-### Aceptación
+### Acceptance
 
-Los experimentos pueden ejecutarse, repetirse y exportarse.
+Experiments can be executed, repeated, and exported.
 
 ---
 
 ## `v0.9.0` — Operational Hardening
 
-### Entregables
+### Deliverables
 
 * update;
 * rollback;
@@ -2287,135 +2273,135 @@ Los experimentos pueden ejecutarse, repetirse y exportarse.
 * doctor;
 * security tests;
 * SBOM;
-* firmas;
+* signatures;
 * provenance;
-* documentación;
+* documentation;
 * performance;
 * Mac/Linux/WSL2.
 
-### Aceptación
+### Acceptance
 
-El sistema puede actualizarse y recuperarse ante un fallo inducido.
+The system can update and recover from an induced failure.
 
 ---
 
 ## `v1.0.0` — Stable Release
 
-### Requisitos
+### Requirements
 
-* API estable;
-* CLI estable;
-* manifest estable;
-* configuración estable;
-* `labnet-v1` congelado;
-* migraciones;
+* stable API;
+* stable CLI;
+* stable manifest;
+* stable configuration;
+* frozen `labnet-v1`;
+* migrations;
 * rollback;
-* imágenes firmadas;
+* signed images;
 * SBOM;
-* documentación completa;
-* seguridad documentada;
+* complete documentation;
+* documented security;
 * `amd64`;
 * `arm64`;
-* pruebas en los dos usuarios;
-* cero vulnerabilidades críticas conocidas;
-* release candidate validado en uso real.
+* tested with both users;
+* zero known critical vulnerabilities;
+* release candidate validated in real-world use.
 
 ---
 
-# 41. Criterios no funcionales
+# 41. Non-Functional Criteria
 
-## Seguridad
+## Security
 
-* RPC no accesible desde la malla.
-* Sin secretos en repositorio.
-* Contenedores no root.
-* Releases verificables.
-* Configuración segura.
+* RPC not accessible from the mesh.
+* No secrets in repository.
+* Non-root containers.
+* Verifiable releases.
+* Secure configuration.
 
-## Rendimiento
+## Performance
 
-En estado base:
+In baseline state:
 
-* Bitheim menor a 150 MiB de RAM;
-* TUI responsiva;
-* startup razonable;
-* minería configurable;
-* sesiones prolongadas soportadas.
+* Bitheim under 150 MiB of RAM;
+* responsive TUI;
+* reasonable startup;
+* configurable mining;
+* prolonged sessions supported.
 
-## Fiabilidad
+## Reliability
 
 * graceful shutdown;
-* reinicio sin corrupción;
-* recuperación;
-* migraciones idempotentes;
-* backups verificables.
+* restart without corruption;
+* recovery;
+* idempotent migrations;
+* verifiable backups.
 
-## Mantenibilidad
+## Maintainability
 
-* sin dependencias circulares;
-* typing estricto;
-* documentación;
+* no circular dependencies;
+* strict typing;
+* documentation;
 * tests;
 * ADRs;
-* deuda registrada.
+* recorded tech debt.
 
-## Escalabilidad
+## Scalability
 
-Dos nodos serán el caso principal.
+Two nodes will be the primary case.
 
-El diseño deberá tolerar más participantes sin cambiar la arquitectura central.
+The design must tolerate more participants without altering the core architecture.
 
 ---
 
-# 42. Definición de terminado
+# 42. Definition of Done
 
-Una tarea estará terminada cuando:
+A task will be considered done when:
 
-* código implementado;
+* code implemented;
 * tests;
 * typing;
 * lint;
-* documentación;
-* revisión de seguridad;
-* logs sanitizados;
-* errores manejados;
-* criterios cumplidos;
-* CI verde;
-* lockfile actualizado cuando corresponda.
+* documentation;
+* security review;
+* sanitized logs;
+* handled errors;
+* fulfilled criteria;
+* green CI;
+* lockfile updated when applicable.
 
 ---
 
-# 43. Gobernanza
+# 43. Governance
 
-Los dos mantenedores serán responsables de:
+The two maintainers will be responsible for:
 
 * roadmap;
-* arquitectura;
-* seguridad;
+* architecture;
+* security;
 * releases;
-* revisión;
-* soporte.
+* review;
+* support.
 
-Ante desacuerdo:
+In case of disagreement:
 
-1. documentar alternativas;
-2. crear experimento;
-3. medir;
-4. elegir la opción más segura y reversible.
+1. document alternatives;
+2. create an experiment;
+3. measure;
+4. choose the safest and most reversible option.
 
 ---
 
-# 44. Licencia y contribuciones
+# 44. Licensing and Contributions
 
-Antes del primer release público se elegirán:
+Before the first public release, the following will be established:
 
-* licencia;
-* política de contribución;
-* código de conducta;
-* política de seguridad;
-* gobernanza.
+* license;
+* contribution policy;
+* code of conduct;
+* security policy;
+* governance.
 
-Archivos obligatorios:
+Mandatory files:
 
 ```text
 LICENSE
@@ -2425,18 +2411,18 @@ SECURITY.md
 GOVERNANCE.md
 ```
 
-No se aceptarán contribuciones que:
+Contributions will not be accepted if they:
 
-* introduzcan telemetría no consentida;
-* relajen seguridad;
-* expongan RPC;
-* incorporen datos reales;
-* eludan consenso;
-* agreguen dependencias sin revisión.
+* introduce non-consensual telemetry;
+* relax security;
+* expose RPC;
+* incorporate real private data;
+* bypass consensus;
+* add dependencies without review.
 
 ---
 
-# 45. Documentación obligatoria
+# 45. Mandatory Documentation
 
 ```text
 README
@@ -2464,98 +2450,98 @@ Contribution Guide
 
 ---
 
-# 46. Riesgos
+# 46. Risks
 
-## Fork de Bitcoin Core
+## Bitcoin Core Fork
 
-Mitigación:
+Mitigation:
 
-* delta mínimo;
-* commits aislados;
+* minimal delta;
+* isolated commits;
 * tests;
-* seguimiento de upstream;
-* documentación.
+* tracking upstream;
+* documentation.
 
-## Exposición de red
+## Network Exposure
 
-Mitigación:
+Mitigation:
 
-* bind explícito;
+* explicit bind;
 * doctor;
 * tests;
-* ejemplos ficticios;
-* RPC local.
+* fictitious examples;
+* local RPC.
 
-## Complejidad
+## Complexity
 
-Mitigación:
+Mitigation:
 
-* monolito modular;
-* roadmap incremental;
-* scope estricto;
-* sin panel web antes de `1.0.0`.
+* modular monolith;
+* incremental roadmap;
+* strict scope;
+* no web dashboard before `1.0.0`.
 
-## Pocos usuarios
+## Low User Base
 
-Mitigación:
+Mitigation:
 
-* diseñar para dos;
-* automatizar pruebas multi-nodo;
-* simulador opcional;
-* no sobredimensionar.
+* design for two;
+* automated multi-node tests;
+* optional simulator;
+* avoid overengineering.
 
-## Plataformas
+## Platforms
 
-Mitigación:
+Mitigation:
 
 * Docker;
-* multi-arquitectura;
+* multi-architecture;
 * CI;
-* pruebas reales;
+* real testing;
 * doctor.
 
-## Divergencia de entornos Python
+## Python Environment Divergence
 
-Mitigación:
+Mitigation:
 
 * `uv`;
 * `.python-version`;
 * `uv.lock`;
 * `uv sync --locked`;
-* mismos comandos en local, CI y Docker.
+* identical commands in local, CI, and Docker.
 
-## Pérdida de datos
+## Data Loss
 
-Mitigación:
+Mitigation:
 
-* volúmenes;
+* volumes;
 * backups;
-* migraciones;
+* migrations;
 * rollback;
 * snapshots.
 
 ---
 
-# 47. Resultado esperado
+# 47. Expected Outcome
 
-Al alcanzar `v1.0.0`, Bitheim permitirá que dos usuarios:
+Upon reaching `v1.0.0`, Bitheim will enable two users to:
 
-1. clonen o instalen la misma distribución;
-2. reproduzcan el entorno Python con `uv`;
-3. ejecuten el sistema en arquitecturas distintas;
-4. se unan a una red privada existente;
-5. creen una red `labnet-v1`;
-6. ejecuten nodos reales;
-7. creen wallets;
-8. realicen transacciones válidas;
-9. participen en minería competitiva;
-10. observen dificultad distribuida;
-11. generen actividad sintética opcional;
-12. ejecuten experimentos;
-13. analicen datos;
-14. exporten resultados;
-15. actualicen Bitheim;
-16. reviertan una actualización fallida;
-17. comprendan qué ocurre detrás de cada abstracción.
+1. clone or install the same distribution;
+2. reproduce the Python environment with `uv`;
+3. run the system across distinct architectures;
+4. join an existing private network;
+5. create a `labnet-v1` network;
+6. run real nodes;
+7. create wallets;
+8. execute valid transactions;
+9. participate in competitive mining;
+10. observe distributed difficulty;
+11. generate optional synthetic activity;
+12. run experiments;
+13. analyze data;
+14. export results;
+15. update Bitheim;
+16. roll back a failed update;
+17. understand what occurs behind every abstraction.
 
-Bitheim deberá permanecer suficientemente pequeño para ser operado y mantenido por dos personas, pero contar con fundamentos técnicos, arquitectónicos y de seguridad que permitan extenderlo después de `v1.0.0` sin una reescritura completa.
+Bitheim must remain small enough to be operated and maintained by two people, while having technical, architectural, and security foundations that allow extending it after `v1.0.0` without a complete rewrite.

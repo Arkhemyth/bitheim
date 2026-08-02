@@ -1,21 +1,21 @@
 # Bitheim
 
-Plataforma distribuida para experimentación, minería y análisis sobre Bitcoin.
+Distributed platform for experimentation, mining, and analysis on Bitcoin.
 
-## Estado del proyecto
+## Project Status
 
-En desarrollo.
+In development.
 
-## Documentación
+## Documentation
 
-Para consultar la especificación y planificación del proyecto, referirse a la fuente principal:
+To review the full project specification and planning, refer to the master document:
 - [`docs/plan_bitheim.md`](docs/plan_bitheim.md)
 
-## Entorno de desarrollo
+## Development Environment
 
-Este proyecto utiliza [`uv`](https://docs.astral.sh/uv/) para la gestión de dependencias y entornos virtuales.
+This project uses [`uv`](https://docs.astral.sh/uv/) for package and virtual environment management.
 
-### Inicialización del entorno
+### Environment Initialization
 
 ```bash
 uv sync

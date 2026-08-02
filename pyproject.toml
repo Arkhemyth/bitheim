@@ -1,7 +1,7 @@
 [project]
 name = "bitheim"
 version = "0.1.0"
-description = "Plataforma distribuida para experimentación, minería y análisis sobre Bitcoin."
+description = "Distributed platform for experimentation, mining, and analysis on Bitcoin."
 readme = "README.md"
 authors = [
     { name = "Diego Peralta", email = "144401211+PeraltaHD4K@users.noreply.github.com" }
