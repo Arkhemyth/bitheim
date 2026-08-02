@@ -1,0 +1,42 @@
+# Python & Virtual Environments
+.venv/
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+secrets/
+
+# Local runtime data & caches
+.local/
+data/
+wallets/
+*.cookie
+*.sqlite
+*.duckdb
+*.parquet
+*.log
+
+# Certificates and keys
+*.pem
+*.key
+*.crt
+
+# Local manifests & overrides
+network.local.yaml
+compose.override.yaml
+backups/
+
+# IDEs and OS files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.idea/
+.vscode/
