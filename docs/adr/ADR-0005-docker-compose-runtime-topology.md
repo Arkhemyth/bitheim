@@ -1,0 +1,102 @@
+# ADR-0005: Docker Compose Runtime Topology
+
+## Status
+
+Accepted
+
+## Date
+
+2026-08-03
+
+## Context
+
+Bitheim `v0.2.0` must operate a real Bitcoin Core node while preserving reproducibility, least privilege, multi-architecture support, and a clean boundary between application behavior and infrastructure control.
+
+The project-wide plan anticipates Docker Compose as the initial deployment mechanism and distinct `bitheim-core` and Bitheim processes. The architecture must decide whether Bitcoin Core runs inside the Bitheim application container, as a separate Compose service, as an unmanaged host process, or behind a more complex orchestration mechanism.
+
+This decision also determines how lifecycle control and RPC authentication work. Giving a Bitheim container the Docker Engine socket would allow convenient sibling-container control, but it would effectively grant host-level container administration. Sharing the complete Bitcoin datadir solely to reach the RPC cookie would expose substantially more data than Bitheim needs.
+
+## Decision
+
+1. The supported `v0.2.0` runtime is a Docker Compose project with separate `bitcoin-core` and `bitheim` services on a private application network.
+2. Compose is the lifecycle authority. Host-side commands or a host-side infrastructure adapter may invoke Compose; the Bitheim application container must not receive the Docker Engine socket or run a nested container engine.
+3. Bitcoin Core runs from a Bitheim-built image based on verified official Bitcoin Core 31.1 release archives. Bitheim will not adopt a community runtime image as an implicit supply-chain dependency.
+4. Bitcoin Core exclusively owns its named datadir volume. Bitheim does not mount that volume.
+5. Bitcoin Core writes its ephemeral RPC cookie to a separate named volume using an explicit absolute `rpccookiefile` path. Bitheim mounts only that volume and only read-only.
+6. RPC is available only on the private Compose network and is not published to the host by default. P2P publication is separately configurable for participant connectivity.
+7. Compose health and dependency conditions may coordinate startup, but application health requires an authenticated read-only RPC probe that verifies `regtest` and the supported node version.
+8. Each node deployment uses an explicit validated Compose project name so that services, networks, and volumes are isolated and addressable without hard-coded container names.
+9. Named volumes survive normal stop and restart operations. Destructive removal is never part of ordinary lifecycle commands.
+10. The application defines lifecycle needs through a port; Compose commands, service names, process output, and container details remain inside the infrastructure adapter.
+11. A host-installed `bitheim` command is the unified user facade. It executes lifecycle operations through the host-side Compose adapter and transparently delegates application/RPC operations to an unprivileged one-shot Bitheim service without implicitly starting dependencies.
+12. Compose remains the sole supported runtime through `v1.0.0`. A native managed-process adapter is provisionally deferred until after `v1.0.0` and may be reprioritized only with evidence of material adoption or accessibility barriers.
+13. Preparation for a possible native runtime is limited to portable application ports, domain states, explicit dependency injection, and typed fake implementations used by tests. No speculative native adapter, installer, process supervisor, or unused runtime-selection framework will be created.
+
+## Alternatives Considered
+
+### Run Bitcoin Core Inside the Bitheim Container
+
+Rejected for `v0.2.0`. It would couple independent process lifecycles, expand the Bitheim image and permissions, complicate health and shutdown semantics, and conflict with the planned separation between the application and Bitcoin Core runtime.
+
+### Give the Bitheim Container the Docker Socket
+
+Rejected. Access to the Docker socket is effectively broad control over the host's containers and mounts. This exceeds the privileges required for node operations and creates an unacceptable security boundary.
+
+### Use a Community Bitcoin Core Image
+
+Rejected as the default trust decision. Community images may be useful references, but their build inputs, update policy, ownership, and multi-architecture manifests introduce an additional authority. Building from official signed-checksum release inputs keeps the provenance decision under project review.
+
+### Run an Unmanaged Host Bitcoin Core Process
+
+Deferred until after `v1.0.0`. It can reduce container overhead and may become a useful adapter, but it introduces host-specific installation, service management, filesystem permissions, binary verification, upgrade behavior, and cross-platform testing before Bitheim has stabilized its application contract.
+
+### Use Static RPC Credentials
+
+Rejected. Cookie authentication provides restart-scoped credentials generated by Bitcoin Core and avoids persisting a password in Compose configuration or repository-managed secret material.
+
+### Share the Complete Bitcoin Datadir Read-Only
+
+Rejected. Bitheim needs the RPC cookie, not direct access to chainstate, blocks, settings, or wallet files. A dedicated cookie volume applies least privilege and makes the credential boundary explicit.
+
+### Introduce Kubernetes or a Custom Supervisor
+
+Rejected for the current scale. Either choice adds operational machinery without improving the two-user `regtest` acceptance path and conflicts with the project's explicit pre-`v1.0.0` scope.
+
+## Consequences
+
+### Positive
+
+- Bitcoin Core and Bitheim remain independently observable processes with clear responsibilities.
+- The topology works consistently across supported Docker environments and architectures.
+- RPC credentials are available to the authorized client without exposing the full Bitcoin datadir.
+- Ordinary application containers do not receive host-level orchestration privileges.
+- Project names and named volumes support multiple isolated nodes on one host.
+- A future external-process adapter can reuse application lifecycle contracts without changing the domain.
+- The project can measure real installation friction before accepting the permanent cost of a second runtime.
+
+### Negative and Trade-offs
+
+- Host-side lifecycle orchestration and in-container Bitheim commands are distinct execution contexts and must be documented clearly.
+- The project must maintain and validate a Bitcoin Core container build in addition to the Bitheim image.
+- Cookie sharing requires aligned runtime group permissions across the two images.
+- Compose health checks alone cannot express the complete domain health contract, so authenticated application probing remains necessary.
+- Remote participants require explicit P2P port configuration and private-network deployment data outside the repository.
+- Users must install a compatible container runtime; on Windows and macOS this commonly includes virtualization and Docker Desktop requirements.
+
+## Implementation Constraints
+
+- No `container_name`; rely on Compose project and service discovery.
+- No default RPC `ports` mapping.
+- No `privileged`, Docker socket, host network, or broad Linux capabilities.
+- Use long-form volume mounts where read-only intent must be explicit.
+- Use a bounded health check and long-form `depends_on` only for startup coordination, not as a substitute for application status.
+- Configure a graceful stop period appropriate for Bitcoin Core state flushing.
+- Pin images, actions, downloaded archives, and architecture-specific checksums in version control.
+- Validate the rendered Compose configuration in CI without printing resolved credentials or private deployment values.
+
+## Related Documents
+
+- [`SPEC-0004: Managed Regtest Node Runtime Contract`](../specs/SPEC-0004-managed-regtest-node-runtime.md)
+- [`v0.2.0 Delivery Plan`](../releases/v0.2.0-plan.md)
+- [`ADR-0001: Modular Monolith Architecture`](ADR-0001-modular-monolith.md)
+- [`ADR-0002: Hexagonal Architecture with Incremental Boundaries`](ADR-0002-hexagonal-architecture-with-incremental-boundaries.md)
