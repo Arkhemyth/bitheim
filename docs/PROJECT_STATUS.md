@@ -25,6 +25,7 @@ Completing the remaining foundational runtime capabilities for v0.1.0.
 - Implemented pure Python standard library JSON Lines structured logging foundation emitting strictly to `stderr` with ISO 8601 UTC timestamps, canonical events, and defense-in-depth sanitization.
 - Integrated structured logging into real consumers: configuration loader and `bitheim doctor` diagnostics.
 - Added comprehensive unit and functional tests for JSONL schema, stream separation, consumer events, and security properties.
+- Established open source governance and community foundation (`CONTRIBUTING.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`, `GOVERNANCE.md`).
 
 ## In Progress
 - None.
