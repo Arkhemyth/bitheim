@@ -65,10 +65,9 @@ def test_cli_module_execution() -> None:
 
 
 def test_cli_installed_entrypoint() -> None:
-    """Verify that the installed bitheim console script executes cleanly if available in PATH."""
+    """Verify that the installed bitheim console script is located in PATH and executes cleanly."""
     bitheim_bin = shutil.which("bitheim")
-    if bitheim_bin is None:
-        pytest.skip("bitheim console script is not located in current PATH")
+    assert bitheim_bin is not None, "bitheim console script executable was not found in PATH"
 
     result = subprocess.run(
         [bitheim_bin, "--version"],
