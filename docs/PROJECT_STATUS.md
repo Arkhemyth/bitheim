@@ -1,10 +1,34 @@
 # Project Status
 
-## Current Milestone
-`v0.1.0 — Foundation` (Completed)
+## Current Release
+`v0.2.0 — Managed Regtest Node`
 
-## Current Objective
-Architectural planning and specification design for the next milestone (`v0.2.0`).
+## Active Release Plan
+[`docs/releases/v0.2.0-plan.md`](releases/v0.2.0-plan.md)
+
+## Current Phase
+Phase 2 of 6 — Managed Node Lifecycle and Health
+
+## Active Increment
+Implement Docker/Compose prerequisite diagnostics, the verified Bitcoin Core runtime, isolated Compose topology, host-side command facade, managed node lifecycle, and bounded health state defined by the accepted runtime contract. Preserve portable lifecycle boundaries without implementing a speculative native runtime.
+
+## Active Specifications
+- [`SPEC-0004: Managed Regtest Node Runtime Contract`](specs/SPEC-0004-managed-regtest-node-runtime.md) (Accepted)
+
+## Relevant Architecture Decisions
+- [`ADR-0001: Modular Monolith`](adr/ADR-0001-modular-monolith.md)
+- [`ADR-0002: Hexagonal Architecture with Incremental Boundaries`](adr/ADR-0002-hexagonal-architecture-with-incremental-boundaries.md)
+- [`ADR-0003: uv Project and Environment Management`](adr/ADR-0003-uv-project-and-environment-management.md)
+- [`ADR-0005: Docker Compose Runtime Topology`](adr/ADR-0005-docker-compose-runtime-topology.md) (Accepted)
+
+## Status
+Implementation planning
+
+## Next Action
+Define the bounded Phase 2 implementation brief from the accepted contract, then delegate implementation for independent architectural review before commit or pull request creation.
+
+## Blockers
+None.
 
 ## Completed
 - Initialized repository structure with `uv` package management (`src-layout`).
@@ -31,7 +55,7 @@ Architectural planning and specification design for the next milestone (`v0.2.0`
 - Configured and verified GitHub repository ruleset protecting `main` with required pull requests, no bypass actors, conversation resolution, and mandatory strict status checks (`Code Quality & Tests` and `Container Image & Multi-Arch Build`).
 
 ## In Progress
-- None.
+- Preparing the managed node lifecycle and health implementation increment for Phase 2 of [`v0.2.0`](releases/v0.2.0-plan.md).
 
 ## Future Hardening (Post-v0.1.0 / Towards v1.0, Non-Blocking)
 - Automated code coverage measurement and thresholds.
