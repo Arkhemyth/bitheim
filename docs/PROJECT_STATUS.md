@@ -21,6 +21,10 @@ Completing the remaining foundational runtime capabilities for v0.1.0.
 - Created multi-stage reproducible Dockerfile with pinned multi-arch base images, non-root user model, and isolated runtime virtual environment.
 - Configured `.dockerignore` to ensure minimal and clean build context.
 - Extended GitHub Actions CI workflow with native container smoke tests and multi-platform (`linux/amd64`, `linux/arm64`) build validation.
+- Defined architectural specification [`docs/specs/SPEC-0003-structured-logging.md`](specs/SPEC-0003-structured-logging.md).
+- Implemented pure Python standard library JSON Lines structured logging foundation emitting strictly to `stderr` with ISO 8601 UTC timestamps, canonical events, and defense-in-depth sanitization.
+- Integrated structured logging into real consumers: configuration loader and `bitheim doctor` diagnostics.
+- Added comprehensive unit and functional tests for JSONL schema, stream separation, consumer events, and security properties.
 
 ## In Progress
 - None.
