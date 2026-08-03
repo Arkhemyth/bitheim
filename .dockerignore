@@ -1,0 +1,63 @@
+# Version control
+.git
+.gitignore
+
+# Virtual environments and dependencies
+.venv
+venv/
+env/
+
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Tests and documentation
+tests/
+docs/
+
+# Repository and agent tooling
+.github/
+.agents/
+.codex/
+
+# Build artifacts
+dist/
+build/
+*.egg-info/
+
+# Local data, logs, database files, and exports
+.bitheim/
+data/
+wallets/
+exports/
+backups/
+secrets/
+*.log
+*.sqlite
+*.duckdb
+*.parquet
+scratch/
+
+# Environment, certificates, and secrets
+.env*
+*.pem
+*.key
+*.crt
+*.cookie
+
+# Configuration overrides and local dev
+network.local.yaml
+compose.override.yaml
+
+# IDE and OS files
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store

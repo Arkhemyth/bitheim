@@ -17,6 +17,10 @@ Completing the remaining foundational runtime capabilities for v0.1.0.
 - Implemented read-only configuration subsystem with strict schema validation and deterministic precedence (default < file < environment < CLI).
 - Added `bitheim doctor` diagnostic subcommand checking Python 3.13 compatibility, configuration validity, and data directory access without side effects.
 - Added comprehensive unit and functional tests across configuration loading, error conditions, and CLI diagnostics.
+- Defined architectural specification [`docs/specs/SPEC-0002-container-image-foundation.md`](specs/SPEC-0002-container-image-foundation.md).
+- Created multi-stage reproducible Dockerfile with pinned multi-arch base images, non-root user model, and isolated runtime virtual environment.
+- Configured `.dockerignore` to ensure minimal and clean build context.
+- Extended GitHub Actions CI workflow with native container smoke tests and multi-platform (`linux/amd64`, `linux/arm64`) build validation.
 
 ## In Progress
 - None.
