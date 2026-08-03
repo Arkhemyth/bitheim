@@ -1,10 +1,10 @@
 # Project Status
 
 ## Current Milestone
-`v0.1.0 — Foundation`
+`v0.1.0 — Foundation` (Completed)
 
 ## Current Objective
-Completing the remaining foundational runtime capabilities for v0.1.0.
+Architectural planning and specification design for the next milestone (`v0.2.0`).
 
 ## Completed
 - Initialized repository structure with `uv` package management (`src-layout`).
@@ -25,10 +25,17 @@ Completing the remaining foundational runtime capabilities for v0.1.0.
 - Implemented pure Python standard library JSON Lines structured logging foundation emitting strictly to `stderr` with ISO 8601 UTC timestamps, canonical events, and defense-in-depth sanitization.
 - Integrated structured logging into real consumers: configuration loader and `bitheim doctor` diagnostics.
 - Added comprehensive unit and functional tests for JSONL schema, stream separation, consumer events, and security properties.
-- Established open source governance and community foundation (`CONTRIBUTING.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`, `GOVERNANCE.md`).
+- Established open source governance and community foundation ([`CONTRIBUTING.md`](../CONTRIBUTING.md), [`SECURITY.md`](../SECURITY.md), [`CODE_OF_CONDUCT.md`](../CODE_OF_CONDUCT.md), [`GOVERNANCE.md`](../GOVERNANCE.md)).
+- Formulated foundational Architecture Decision Records ([`ADR-0001: Modular Monolith`](adr/ADR-0001-modular-monolith.md), [`ADR-0002: Hexagonal Architecture with Incremental Boundaries`](adr/ADR-0002-hexagonal-architecture-with-incremental-boundaries.md), [`ADR-0003: uv Project and Environment Management`](adr/ADR-0003-uv-project-and-environment-management.md)).
+- Aligned GitHub Actions CI type checking gate (`uv run mypy src tests`) with project configuration.
+- Configured and verified GitHub repository ruleset protecting `main` with required pull requests, no bypass actors, conversation resolution, and mandatory strict status checks (`Code Quality & Tests` and `Container Image & Multi-Arch Build`).
 
 ## In Progress
 - None.
 
-## Open Decisions
-- None.
+## Future Hardening (Post-v0.1.0 / Towards v1.0, Non-Blocking)
+- Automated code coverage measurement and thresholds.
+- Automated dependency vulnerability audits and license checks.
+- Automated secret detection and repository history scanning.
+- Static application security testing (SAST) and advanced static analysis.
+- Extended integration and endurance test fixtures.
