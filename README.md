@@ -18,7 +18,7 @@ This project uses [`uv`](https://docs.astral.sh/uv/) for package and virtual env
 ### Environment Initialization
 
 ```bash
-uv sync
+uv sync --locked --all-groups
 ```
 
 ### Running the CLI
@@ -44,3 +44,11 @@ docker run --rm bitheim:local --help
 docker run --rm bitheim:local --version
 docker run --rm bitheim:local doctor
 ```
+
+## Community & Governance
+
+- [Contributing Guidelines](CONTRIBUTING.md) — Development setup, branching workflow, quality gates, and contribution guidelines.
+- [Security Policy](SECURITY.md) — Vulnerability reporting channels and disclosure process.
+- [Code of Conduct](CODE_OF_CONDUCT.md) — Community standards, pledge, and enforcement.
+- [Project Governance](GOVERNANCE.md) — Maintainer-led governance model and decision-making.
+- [License](LICENSE) — Released under the MIT License.
