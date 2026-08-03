@@ -6,7 +6,7 @@ This document establishes the collaboration rules and Git workflow for **Bitheim
 
 ## 1. Repository Language
 
-- **Official Language:** English is the mandatory language for all permanent repository assets:
+- **Permanent Rule:** English is the mandatory official language for all repository content:
   - Documentation and READMEs
   - Source code, docstrings, and inline comments
   - Commit messages and pull request descriptions
@@ -16,16 +16,16 @@ This document establishes the collaboration rules and Git workflow for **Bitheim
 
 ## 2. Branching & Trunk-Based Strategy
 
-- **`main` Branch:** The primary trunk. Must remain buildable, tested, and green at all times.
-- **Feature Branches:** Use short-lived, focused branches for changes:
+- **`main` Branch:** The primary trunk. Must remain buildable, tested, and passing at all times.
+- **Feature Branches:** Use short-lived, focused branches for proposed changes:
   - Format: `<type>/<short-description>` (e.g., `feat/add-cli-doctor`, `chore/setup-ci`, `docs/update-status`).
-- **Scope & Cohesion:** Keep commits and pull requests atomic, focused on a single concern, and bounded to the sprint scope.
+- **Scope & Cohesion:** Keep commits and pull requests atomic, focused on a single concern, and bounded to the immediate task scope.
 
 ---
 
 ## 3. Commit Message Conventions
 
-Bitheim follows [Conventional Commits](https://www.conventionalcommits.org/):
+Bitheim strictly follows [Conventional Commits](https://www.conventionalcommits.org/):
 
 ```text
 <type>: <description in imperative mood>
@@ -44,17 +44,21 @@ Bitheim follows [Conventional Commits](https://www.conventionalcommits.org/):
 
 ---
 
-## 4. Environment & Tooling Guidelines
+## 4. Environment & Quality Standards
 
 - **Environment Management:** Use `uv` exclusively.
   - Sync environment: `uv sync --locked`
   - Execute commands: `uv run <command>`
-  - Never run `pip install` globally or modify `uv.lock` manually.
-- **Quality Gates:** Code submitted to `main` must pass formatting (`ruff format`), linting (`ruff check`), static typing (`mypy src`), and tests (`pytest`).
+  - Never run `pip install` globally or manually edit `uv.lock`.
+- **Quality Gates:** Changes integrated into `main` must adhere to project quality standards:
+  - Formatting & Linting (`ruff format`, `ruff check`)
+  - Static Typing (`mypy src`)
+  - Automated Tests (`pytest`)
+  - Automated CI validation once workflows are introduced.
 
 ---
 
 ## 5. Security & Secret Protection
 
-- **Zero-Secret Policy:** Never commit secrets, tokens, API keys, `.cookie` files, or private network IP addresses (e.g., Tailscale/Headscale IPs).
-- **Gitignore Compliance:** Verify that local runtime data, databases (`*.duckdb`, `*.sqlite`), and virtual environments (`.venv/`) remain untracked.
+- **Zero-Secret Policy:** Never commit secrets, tokens, API keys, `.cookie` files, private network IP addresses, or sensitive credentials.
+- **Gitignore Compliance:** Ensure local runtime artifacts, databases (`*.duckdb`, `*.sqlite`), and virtual environments (`.venv/`) remain untracked.

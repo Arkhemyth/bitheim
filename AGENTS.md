@@ -1,28 +1,18 @@
-# Agent and Contributor Onboarding Guide
+# Agent and Contributor Entrypoint
 
-Welcome to **Bitheim**. This document serves as the primary entry point for AI agents and human contributors onboarding to the repository.
-
----
-
-## 1. Project Reference & Source of Truth
-
-- **Master Plan & Architecture:**
-  [`docs/plan_bitheim.md`](docs/plan_bitheim.md) constitutes the temporary **Source of Truth** for the project. It defines the product vision, domain boundaries, engineering standards, and roadmap up to `v1.0.0`.
-
-- **Current Repository Status:**
-  [`docs/PROJECT_STATUS.md`](docs/PROJECT_STATUS.md) tracks the active milestone, immediate objectives, completed items, and open decisions. Always inspect this file first to understand the current state of work.
+Welcome to **Bitheim**. This document serves as the single entrypoint for AI agents and human contributors onboarding to the repository.
 
 ---
 
-## 2. Collaboration Rules & Workflow
+## Recommended Onboarding Sequence
 
-- **Git & Development Standards:**
-  [`.agents/rules/git-workflow.md`](.agents/rules/git-workflow.md) defines the required branch strategy, commit conventions, language standardization, and environment management rules.
+To understand the project and begin contributing, read the repository documents in the following order:
 
----
+1. **[`docs/PROJECT_STATUS.md`](docs/PROJECT_STATUS.md)**  
+   Inspect this file first to understand the active milestone, current objectives, completed work, and present state.
 
-## 3. General Principles
+2. **[`docs/plan_bitheim.md`](docs/plan_bitheim.md)**  
+   The temporary **Source of Truth** for Bitheim. Defines the overarching vision, architecture, domain boundaries, engineering standards, and roadmap up to `v1.0.0`.
 
-- **Language:** All repository content (code, comments, documentation, commit messages) must be written in English.
-- **Python Environment:** Use [`uv`](https://docs.astral.sh/uv/) exclusively (`uv sync`, `uv run`). Do not use global `pip`.
-- **Security:** Never commit private IPs, secrets, RPC cookies, or credentials.
+3. **[`.agents/rules/git-workflow.md`](.agents/rules/git-workflow.md)**  
+   The official rules for branch strategy, commit conventions, language standardization, and environment management.
