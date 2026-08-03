@@ -8,8 +8,9 @@ In development.
 
 ## Documentation
 
-To review the full project specification and planning, refer to the master document:
-- [`docs/plan_bitheim.md`](docs/plan_bitheim.md)
+To review the full project specification, planning, and architectural decisions, refer to:
+- [`docs/plan_bitheim.md`](docs/plan_bitheim.md) — Master planning and specification document.
+- [`docs/adr/`](docs/adr/) — Architecture Decision Records (ADRs).
 
 ## Development Environment
 

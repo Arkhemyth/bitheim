@@ -38,7 +38,7 @@ jobs:
         run: uv run ruff check .
 
       - name: Static type check (MyPy)
-        run: uv run mypy src
+        run: uv run mypy src tests
 
       - name: Run automated test suite (Pytest)
         run: uv run pytest
