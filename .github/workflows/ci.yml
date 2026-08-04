@@ -15,12 +15,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
       - name: Install uv
-        uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
         with:
           enable-cache: true
           version: "0.11.31"
@@ -48,56 +48,201 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3.7.0
+        uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
 
-      - name: Build native container image
-        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+      - name: Validate Compose topology configuration
+        run: docker compose -f docker/compose.yml config --quiet
+
+      - name: Build native Bitheim container image
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
+          file: Dockerfile
           platforms: linux/amd64
           load: true
           tags: bitheim:ci
-          cache-from: type=gha,scope=native
-          cache-to: type=gha,mode=max,scope=native
+          cache-from: type=gha,scope=bitheim-native
+          cache-to: type=gha,mode=max,scope=bitheim-native
 
-      - name: Smoke test CLI help flag
+      - name: Build native Bitcoin Core container image
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: docker/bitcoin-core
+          file: docker/bitcoin-core/Dockerfile
+          platforms: linux/amd64
+          load: true
+          tags: bitheim-bitcoin-core:ci
+          cache-from: type=gha,scope=bitcoincore-native
+          cache-to: type=gha,mode=max,scope=bitcoincore-native
+
+      - name: Smoke test Bitheim CLI help flag
         run: docker run --rm bitheim:ci --help
 
-      - name: Smoke test CLI version flag
+      - name: Smoke test Bitheim CLI version flag
         run: docker run --rm bitheim:ci --version
 
-      - name: Smoke test CLI doctor diagnostics
+      - name: Smoke test Bitheim CLI doctor diagnostics
         run: docker run --rm bitheim:ci doctor
 
-      - name: Verify non-root execution user
+      - name: Smoke test Bitcoin Core daemon version
+        run: |
+          VERSION_OUTPUT=$(docker run --rm bitheim-bitcoin-core:ci --version)
+          echo "${VERSION_OUTPUT}"
+          echo "${VERSION_OUTPUT}" | grep -q "Bitcoin Core daemon version"
+
+      - name: Smoke test Bitcoin Core CLI version
+        run: |
+          VERSION_OUTPUT=$(docker run --rm --entrypoint bitcoin-cli bitheim-bitcoin-core:ci --version)
+          echo "${VERSION_OUTPUT}"
+          echo "${VERSION_OUTPUT}" | grep -q "Bitcoin Core RPC client version"
+
+      - name: Verify Bitheim non-root execution user
         run: |
           UID_OUTPUT=$(docker run --rm --entrypoint id bitheim:ci -u)
-          echo "Container runtime UID: ${UID_OUTPUT}"
-          test "${UID_OUTPUT}" = "10001"
+          GID_OUTPUT=$(docker run --rm --entrypoint id bitheim:ci -g)
+          echo "Bitheim runtime UID: ${UID_OUTPUT}, GID: ${GID_OUTPUT}"
+          test "${UID_OUTPUT}" = "10002"
+          test "${GID_OUTPUT}" = "10000"
 
-      - name: Verify immutable application environment
+      - name: Verify Bitcoin Core non-root execution user
+        run: |
+          UID_OUTPUT=$(docker run --rm --entrypoint id bitheim-bitcoin-core:ci -u)
+          GID_OUTPUT=$(docker run --rm --entrypoint id bitheim-bitcoin-core:ci -g)
+          echo "Bitcoin Core runtime UID: ${UID_OUTPUT}, GID: ${GID_OUTPUT}"
+          test "${UID_OUTPUT}" = "10001"
+          test "${GID_OUTPUT}" = "10000"
+
+      - name: Verify Bitheim immutable application environment
         run: |
           if docker run --rm --entrypoint touch bitheim:ci /opt/bitheim/.venv/test_immutable 2>/dev/null; then
             echo "Security violation: /opt/bitheim/.venv was writable by runtime user"
             exit 1
           fi
 
-      - name: Verify writable data directory
+      - name: Verify Bitheim writable data directory
         run: docker run --rm --entrypoint touch bitheim:ci /data/test_ephemeral
 
-      - name: Validate multi-platform build (linux/amd64, linux/arm64)
-        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+      - name: Verify Bitcoin Core writable data directories
+        run: |
+          docker run --rm --entrypoint touch bitheim-bitcoin-core:ci /data/bitcoin/test_ephemeral
+          docker run --rm --entrypoint touch bitheim-bitcoin-core:ci /data/rpc/test_ephemeral
+
+      - name: Integration test — start Compose topology
+        env:
+          BITHEIM_BITCOIN_CORE_IMAGE: bitheim-bitcoin-core:ci
+          BITHEIM_IMAGE: bitheim:ci
+        run: |
+          docker compose -f docker/compose.yml --project-name ci-integration up -d bitcoin-core
+          echo "Waiting for bitcoin-core healthcheck..."
+          timeout 60 bash -c 'until docker compose -f docker/compose.yml --project-name ci-integration ps --format json | grep -q "healthy"; do sleep 2; done'
+
+      - name: Integration test — delegated health probe through bitheim boundary
+        env:
+          BITHEIM_BITCOIN_CORE_IMAGE: bitheim-bitcoin-core:ci
+          BITHEIM_IMAGE: bitheim:ci
+        run: |
+          HEALTH_JSON=$(docker compose -f docker/compose.yml --project-name ci-integration run --rm --no-deps -T bitheim status --json)
+          echo "Delegated health probe response:"
+          echo "${HEALTH_JSON}" | jq .
+          # Verify exact regtest chain and 310100 version
+          CHAIN=$(echo "${HEALTH_JSON}" | jq -r '.health.chain')
+          VERSION=$(echo "${HEALTH_JSON}" | jq -r '.health.version')
+          STATE=$(echo "${HEALTH_JSON}" | jq -r '.health.state')
+          test "${CHAIN}" = "regtest"
+          test "${VERSION}" = "310100"
+          test "${STATE}" = "healthy"
+
+      - name: Integration test — verify cookie volume is read-only in bitheim
+        env:
+          BITHEIM_BITCOIN_CORE_IMAGE: bitheim-bitcoin-core:ci
+          BITHEIM_IMAGE: bitheim:ci
+        run: |
+          if docker compose -f docker/compose.yml --project-name ci-integration run --rm --no-deps -T --entrypoint touch bitheim /data/rpc/test_write 2>/dev/null; then
+            echo "Security violation: RPC cookie volume is writable in bitheim container"
+            exit 1
+          fi
+          echo "Cookie volume is correctly read-only in bitheim container"
+
+      - name: Integration test — verify no Bitcoin datadir mount in bitheim
+        env:
+          BITHEIM_BITCOIN_CORE_IMAGE: bitheim-bitcoin-core:ci
+          BITHEIM_IMAGE: bitheim:ci
+        run: |
+          # bitheim container must not have /data/bitcoin mounted
+          MOUNTS=$(docker compose -f docker/compose.yml --project-name ci-integration run --rm --no-deps -T --entrypoint ls bitheim /data/ 2>/dev/null || true)
+          if echo "${MOUNTS}" | grep -q "bitcoin"; then
+            echo "Security violation: bitheim container has Bitcoin datadir mounted"
+            exit 1
+          fi
+          echo "Bitheim container correctly does not mount Bitcoin datadir"
+
+      - name: Integration test — verify no host RPC port publication
+        run: |
+          # Port 18443 must not be published to the host
+          PUBLISHED=$(docker port ci-integration-bitcoin-core-1 18443 2>/dev/null || true)
+          if [ -n "${PUBLISHED}" ]; then
+            echo "Security violation: RPC port 18443 is published to host: ${PUBLISHED}"
+            exit 1
+          fi
+          echo "RPC port 18443 is correctly not published to host"
+
+      - name: Integration test — stop topology
+        env:
+          BITHEIM_BITCOIN_CORE_IMAGE: bitheim-bitcoin-core:ci
+          BITHEIM_IMAGE: bitheim:ci
+        run: |
+          docker compose -f docker/compose.yml --project-name ci-integration stop -t 10
+
+      - name: Integration test — verify volume retention after stop
+        run: |
+          VOLUMES=$(docker volume ls --filter name=ci-integration --format '{{.Name}}')
+          echo "Retained volumes: ${VOLUMES}"
+          echo "${VOLUMES}" | grep -q "bitcoin-data"
+          echo "${VOLUMES}" | grep -q "bitcoin-rpc"
+
+      - name: Integration test — restart and re-verify health
+        env:
+          BITHEIM_BITCOIN_CORE_IMAGE: bitheim-bitcoin-core:ci
+          BITHEIM_IMAGE: bitheim:ci
+        run: |
+          docker compose -f docker/compose.yml --project-name ci-integration up -d bitcoin-core
+          timeout 60 bash -c 'until docker compose -f docker/compose.yml --project-name ci-integration ps --format json | grep -q "healthy"; do sleep 2; done'
+          HEALTH_JSON=$(docker compose -f docker/compose.yml --project-name ci-integration run --rm --no-deps -T bitheim status --json)
+          STATE=$(echo "${HEALTH_JSON}" | jq -r '.health.state')
+          test "${STATE}" = "healthy"
+
+      - name: Integration test — project-scoped cleanup
+        if: always()
+        env:
+          BITHEIM_BITCOIN_CORE_IMAGE: bitheim-bitcoin-core:ci
+          BITHEIM_IMAGE: bitheim:ci
+        run: |
+          docker compose -f docker/compose.yml --project-name ci-integration down --volumes --timeout 10
+
+      - name: Validate Bitheim multi-platform build (linux/amd64, linux/arm64)
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
+          file: Dockerfile
           platforms: linux/amd64,linux/arm64
           outputs: type=cacheonly
-          cache-from: type=gha,scope=multiarch
-          cache-to: type=gha,mode=max,scope=multiarch
+          cache-from: type=gha,scope=bitheim-multiarch
+          cache-to: type=gha,mode=max,scope=bitheim-multiarch
+
+      - name: Validate Bitcoin Core multi-platform build (linux/amd64, linux/arm64)
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: docker/bitcoin-core
+          file: docker/bitcoin-core/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          outputs: type=cacheonly
+          cache-from: type=gha,scope=bitcoincore-multiarch
+          cache-to: type=gha,mode=max,scope=bitcoincore-multiarch

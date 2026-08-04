@@ -30,11 +30,11 @@ LABEL org.opencontainers.image.title="Bitheim" \
       org.opencontainers.image.vendor="Arkhemyth" \
       org.opencontainers.image.licenses="MIT"
 
-# Create non-root system user, runtime data directory (/data), and ensure /opt/bitheim is root-owned
-RUN groupadd --gid 10001 bitheim \
-    && useradd --uid 10001 --gid 10001 --no-create-home --shell /usr/sbin/nologin bitheim \
+# Create shared group (GID 10000), unprivileged user (UID 10002), and runtime data directory (/data)
+RUN groupadd --gid 10000 bitheim-rpc \
+    && useradd --uid 10002 --gid 10000 --no-create-home --shell /usr/sbin/nologin bitheim \
     && mkdir -p /data /opt/bitheim \
-    && chown -R bitheim:bitheim /data \
+    && chown -R 10002:10000 /data \
     && chmod 0750 /data
 
 # Copy production virtualenv from builder (root-owned, read-only to runtime user)
@@ -42,10 +42,11 @@ COPY --from=builder /opt/bitheim/.venv /opt/bitheim/.venv
 
 ENV PATH="/opt/bitheim/.venv/bin:$PATH" \
     BITHEIM_DATA_DIR=/data \
+    BITHEIM_EXECUTION_CONTEXT=container \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
 
-USER 10001:10001
+USER 10002:10000
 WORKDIR /data
 
 ENTRYPOINT ["/opt/bitheim/.venv/bin/bitheim"]

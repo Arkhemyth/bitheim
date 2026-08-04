@@ -62,3 +62,13 @@ Bitheim strictly follows [Conventional Commits](https://www.conventionalcommits.
 
 - **Zero-Secret Policy:** Never commit secrets, tokens, API keys, `.cookie` files, private network IP addresses, or sensitive credentials.
 - **Gitignore Compliance:** Ensure local runtime artifacts, databases (`*.duckdb`, `*.sqlite`), and virtual environments (`.venv/`) remain untracked.
+
+---
+
+## 6. Regression Test Preservation
+
+- Tests already integrated into `main` are regression contracts. Default to preserving them and adding new tests for new behavior.
+- Do not delete, replace, weaken, skip, or broadly rewrite an integrated test merely to make a change pass.
+- An integrated test may change only for an intentional contract change backed by an accepted SPEC, ADR, or explicit maintainer decision. Document the rationale in the pull request, retain equivalent relevant coverage, and obtain explicit reviewer approval.
+- Test-only refactoring is acceptable only when the original assertions and behavioral intent remain at least as strong.
+- Review the test diff against `main`. Passing gates and total test counts do not prove preservation of historical coverage.

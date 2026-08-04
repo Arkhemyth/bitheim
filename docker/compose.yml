@@ -1,0 +1,66 @@
+# Bitheim Managed Node Docker Compose Topology
+# SPEC-0004 & ADR-0005: Isolated dual-service regtest runtime
+
+services:
+  bitcoin-core:
+    image: ${BITHEIM_BITCOIN_CORE_IMAGE:-bitheim-bitcoin-core:31.1}
+    restart: unless-stopped
+    stop_grace_period: 30s
+    user: "10001:10000"
+    command:
+      - "-conf=/etc/bitcoin/bitcoin.conf"
+      - "-datadir=/data/bitcoin"
+      - "-rpccookiefile=/data/rpc/.cookie"
+      - "-rpccookieperms=group"
+      - "-rpcbind=0.0.0.0"
+      - "-rpcallowip=${BITHEIM_COMPOSE_SUBNET:-172.28.0.0/16}"
+    volumes:
+      - type: volume
+        source: bitcoin-data
+        target: /data/bitcoin
+        read_only: false
+      - type: volume
+        source: bitcoin-rpc
+        target: /data/rpc
+        read_only: false
+    networks:
+      - bitheim-net
+    healthcheck:
+      test: ["CMD", "bitcoin-cli", "-regtest", "-rpccookiefile=/data/rpc/.cookie", "getblockchaininfo"]
+      interval: 2s
+      timeout: 2s
+      retries: 15
+      start_period: 3s
+
+  bitheim:
+    image: ${BITHEIM_IMAGE:-bitheim:local}
+    restart: "no"
+    user: "10002:10000"
+    environment:
+      BITHEIM_EXECUTION_CONTEXT: container
+      BITHEIM_RPC_HOST: bitcoin-core
+      BITHEIM_RPC_PORT: "18443"
+      BITHEIM_RPC_COOKIE_FILE: /data/rpc/.cookie
+      BITHEIM_DATA_DIR: /data
+    volumes:
+      - type: volume
+        source: bitcoin-rpc
+        target: /data/rpc
+        read_only: true
+    networks:
+      - bitheim-net
+    depends_on:
+      bitcoin-core:
+        condition: service_healthy
+
+volumes:
+  bitcoin-data:
+  bitcoin-rpc:
+
+networks:
+  bitheim-net:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: ${BITHEIM_COMPOSE_SUBNET:-172.28.0.0/16}

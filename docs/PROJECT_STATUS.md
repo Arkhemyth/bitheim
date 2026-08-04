@@ -22,10 +22,10 @@ Implement Docker/Compose prerequisite diagnostics, the verified Bitcoin Core run
 - [`ADR-0005: Docker Compose Runtime Topology`](adr/ADR-0005-docker-compose-runtime-topology.md) (Accepted)
 
 ## Status
-Implementation planning
+Implementation in progress
 
 ## Next Action
-Define the bounded Phase 2 implementation brief from the accepted contract, then delegate implementation for independent architectural review before commit or pull request creation.
+Integrate `feat/add-managed-node-lifecycle` via reviewed PR to `main` and advance to Phase 3.
 
 ## Blockers
 None.
@@ -53,9 +53,10 @@ None.
 - Formulated foundational Architecture Decision Records ([`ADR-0001: Modular Monolith`](adr/ADR-0001-modular-monolith.md), [`ADR-0002: Hexagonal Architecture with Incremental Boundaries`](adr/ADR-0002-hexagonal-architecture-with-incremental-boundaries.md), [`ADR-0003: uv Project and Environment Management`](adr/ADR-0003-uv-project-and-environment-management.md)).
 - Aligned GitHub Actions CI type checking gate (`uv run mypy src tests`) with project configuration.
 - Configured and verified GitHub repository ruleset protecting `main` with required pull requests, no bypass actors, conversation resolution, and mandatory strict status checks (`Code Quality & Tests` and `Container Image & Multi-Arch Build`).
+- Defined architectural specification [`docs/specs/SPEC-0004-managed-regtest-node-runtime.md`](specs/SPEC-0004-managed-regtest-node-runtime.md) and [`ADR-0005: Docker Compose Runtime Topology`](adr/ADR-0005-docker-compose-runtime-topology.md) for Phase 1.
 
 ## In Progress
-- Preparing the managed node lifecycle and health implementation increment for Phase 2 of [`v0.2.0`](releases/v0.2.0-plan.md).
+- Phase 2 implementation on `feat/add-managed-node-lifecycle`: verified Bitcoin Core 31.1 container image, isolated Docker Compose topology, domain lifecycle models, `NodeLifecyclePort`, `ComposeLifecycleAdapter`, `NodeLifecycleService`, host-side CLI commands (`start`, `stop`, `status`), `bitheim doctor` Compose prerequisite diagnostics, and execution-context delegation boundary.
 
 ## Future Hardening (Post-v0.1.0 / Towards v1.0, Non-Blocking)
 - Automated code coverage measurement and thresholds.
