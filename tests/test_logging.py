@@ -7,7 +7,7 @@ import sys
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -45,20 +45,14 @@ def test_structured_formatter_required_fields() -> None:
         exc_info=None,
     )
     record.event = "test_event"
-
-    output = formatter.format(record)
-    parsed = json.loads(output)
-
+    parsed = json.loads(formatter.format(record))
     assert "timestamp" in parsed
     assert parsed["level"] == "INFO"
     assert parsed["module"] == "bitheim.test_module"
     assert parsed["event"] == "test_event"
-
-    # Verify ISO 8601 UTC timestamp format with trailing Z
     ts_str = str(parsed["timestamp"])
     assert ts_str.endswith("Z")
-    parsed_dt = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
-    assert parsed_dt.tzinfo == UTC
+    assert datetime.fromisoformat(ts_str.replace("Z", "+00:00")).tzinfo == UTC
 
 
 def test_structured_formatter_fallback_event_does_not_leak_message() -> None:
@@ -74,10 +68,8 @@ def test_structured_formatter_fallback_event_does_not_leak_message() -> None:
         args=(),
         exc_info=None,
     )
-
     output = formatter.format(record)
-    parsed = json.loads(output)
-    assert parsed["event"] == SAFE_FALLBACK_EVENT
+    assert json.loads(output)["event"] == SAFE_FALLBACK_EVENT
     assert secret_sentinel not in output
 
 
@@ -98,7 +90,6 @@ def test_structured_formatter_optional_context_fields() -> None:
     record.node_id = "node-alpha"
     record.experiment_id = "exp-mining-01"
     record.data = {"iteration": 1, "active": True}
-
     parsed = json.loads(formatter.format(record))
     assert parsed["correlation_id"] == "corr-12345"
     assert parsed["node_id"] == "node-alpha"
@@ -114,7 +105,6 @@ def test_structured_formatter_exception_serialization_type_only() -> None:
         raise ValueError(f"Failed to open {secret_path_sentinel}")
     except ValueError:
         exc_info = sys.exc_info()
-
     record = logging.LogRecord(
         name="bitheim.error",
         level=logging.ERROR,
@@ -125,11 +115,8 @@ def test_structured_formatter_exception_serialization_type_only() -> None:
         exc_info=exc_info,
     )
     record.event = "error_occurred"
-
     output = formatter.format(record)
-    parsed = json.loads(output)
-    assert "exception" in parsed
-    assert parsed["exception"] == {"type": "ValueError"}
+    assert json.loads(output)["exception"] == {"type": "ValueError"}
     assert secret_path_sentinel not in output
 
 
@@ -153,15 +140,10 @@ def test_structured_formatter_defense_in_depth_sanitization() -> None:
         "auth_token": "token-xyz",
         "cookie_data": "cookie-val",
         "seed_phrase": "word1 word2",
-        "nested": {
-            "private_key": "hex-key",
-            "safe_field": 42,
-        },
+        "nested": {"private_key": "hex-key", "safe_field": 42},
         "list_items": [{"secret_key": "val"}, {"safe": True}],
     }
-
-    parsed = json.loads(formatter.format(record))
-    data = parsed["data"]
+    data = json.loads(formatter.format(record))["data"]
     assert data["user"] == "alice"
     assert data["api_key"] == "[REDACTED]"
     assert data["rpc_password"] == "[REDACTED]"
@@ -265,7 +247,9 @@ def test_handle_doctor_structured_logging(
         config = None
         data_dir = str(tmp_path / "data")
 
-    exit_code = handle_doctor(Args())  # type: ignore[arg-type]
+    with patch("shutil.which", return_value="/usr/bin/docker"), patch("subprocess.run") as mock_sub:
+        mock_sub.return_value = MagicMock(returncode=0, stdout="26.0.0\n")
+        exit_code = handle_doctor(Args())  # type: ignore[arg-type]
     assert exit_code == 0
 
     # Functional stdout output check

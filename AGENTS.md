@@ -29,3 +29,9 @@ To understand the project and begin contributing, read the repository documents 
    The official rules for branch strategy, commit conventions, language standardization, and environment management.
 
 Before making changes, verify the repository state and work only within the assigned increment. When an integrated change advances the active phase, update the release plan and `docs/PROJECT_STATUS.md` in the same delivery so that the next contributor receives an accurate handoff.
+
+## Regression Test Preservation
+
+Tests integrated into `main` are regression contracts. Preserve them by default and add coverage for new behavior instead of deleting, replacing, weakening, skipping, or broadly rewriting existing tests to make an implementation pass.
+
+An integrated test may change only when an intentional contract change is supported by an accepted SPEC, ADR, or explicit maintainer decision. The pull request must explain the reason, preserve equivalent relevant coverage, and receive explicit reviewer approval. Structural test refactoring is allowed only when the original assertions and behavioral intent remain at least as strong. Reviewers must inspect the test diff against `main`; a passing suite or increased test count is not evidence that historical coverage was preserved.

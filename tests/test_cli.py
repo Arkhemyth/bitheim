@@ -5,10 +5,12 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from bitheim import __version__
+from bitheim.domain.node import NodeHealth, NodeLifecycleState, NodeStatus
 from bitheim.interfaces.cli import build_parser, main
 
 
@@ -29,6 +31,9 @@ def test_cli_help_flag(capsys: pytest.CaptureFixture[str]) -> None:
     assert "--help" in captured.out
     assert "--version" in captured.out
     assert "doctor" in captured.out
+    assert "start" in captured.out
+    assert "stop" in captured.out
+    assert "status" in captured.out
 
 
 def test_cli_version_flag(capsys: pytest.CaptureFixture[str]) -> None:
@@ -68,7 +73,9 @@ def test_cli_doctor_help(capsys: pytest.CaptureFixture[str]) -> None:
 def test_cli_doctor_success(capsys: pytest.CaptureFixture[str], tmp_path: Path) -> None:
     """Verify that 'bitheim doctor' executes all diagnostic checks successfully and exits 0."""
     data_dir = tmp_path / "valid_data"
-    exit_code = main(["doctor", "--data-dir", str(data_dir)])
+    with patch("shutil.which", return_value="/usr/bin/docker"), patch("subprocess.run") as mock_sub:
+        mock_sub.return_value = MagicMock(returncode=0, stdout="26.0.0\n")
+        exit_code = main(["doctor", "--data-dir", str(data_dir)])
     assert exit_code == 0
     captured = capsys.readouterr()
     assert "[✓] Python runtime:" in captured.out
@@ -84,7 +91,9 @@ def test_cli_doctor_existing_directory_success(
     """Verify that 'bitheim doctor' succeeds when data_dir already exists and is writable."""
     data_dir = tmp_path / "existing_data"
     data_dir.mkdir()
-    exit_code = main(["doctor", "--data-dir", str(data_dir)])
+    with patch("shutil.which", return_value="/usr/bin/docker"), patch("subprocess.run") as mock_sub:
+        mock_sub.return_value = MagicMock(returncode=0, stdout="26.0.0\n")
+        exit_code = main(["doctor", "--data-dir", str(data_dir)])
     assert exit_code == 0
     captured = capsys.readouterr()
     assert "[✓] Data directory access: directory exists and is writable" in captured.out
@@ -141,3 +150,82 @@ def test_cli_installed_entrypoint() -> None:
     )
     assert result.returncode == 0
     assert "[✓] Python runtime:" in result.stdout
+
+
+def test_cli_container_context_lifecycle_protection(capsys: pytest.CaptureFixture[str]) -> None:
+    """Verify that lifecycle operations fail when executed within container context."""
+    with patch.dict(os.environ, {"BITHEIM_EXECUTION_CONTEXT": "container"}):
+        exit_code = main(["start"])
+        assert exit_code == 1
+        captured = capsys.readouterr()
+        assert "cannot be run from inside a container" in captured.err
+
+
+def test_cli_start_command_flow(capsys: pytest.CaptureFixture[str]) -> None:
+    """Verify standard start command output formatting and success exit code."""
+    with (
+        patch(
+            "bitheim.application.service.NodeLifecycleService.start_node",
+            return_value=NodeStatus(
+                node_id="regtest-node-1",
+                state=NodeLifecycleState.HEALTHY,
+                health=NodeHealth(
+                    state=NodeLifecycleState.HEALTHY,
+                    chain="regtest",
+                    version=310100,
+                    blocks=0,
+                ),
+            ),
+        ),
+        patch("bitheim.interfaces.cli._is_container_execution_context", return_value=False),
+    ):
+        exit_code = main(["start", "--node-id", "regtest-node-1"])
+        assert exit_code == 0
+        captured = capsys.readouterr()
+        assert "started and healthy" in captured.out
+        assert "chain: regtest" in captured.out
+        assert "version: 310100" in captured.out
+
+
+def test_cli_stop_command_flow(capsys: pytest.CaptureFixture[str]) -> None:
+    """Verify standard stop command output formatting and success exit code."""
+    with (
+        patch(
+            "bitheim.application.service.NodeLifecycleService.stop_node",
+            return_value=NodeStatus(
+                node_id="regtest-node-1",
+                state=NodeLifecycleState.STOPPED,
+                health=NodeHealth(state=NodeLifecycleState.STOPPED, details="node_stopped"),
+            ),
+        ),
+        patch("bitheim.interfaces.cli._is_container_execution_context", return_value=False),
+    ):
+        exit_code = main(["stop", "--node-id", "regtest-node-1"])
+        assert exit_code == 0
+        captured = capsys.readouterr()
+        assert "stopped" in captured.out
+
+
+def test_cli_status_json_flow(capsys: pytest.CaptureFixture[str]) -> None:
+    """Verify JSON output format of status command."""
+    with (
+        patch(
+            "bitheim.application.service.NodeLifecycleService.get_node_status",
+            return_value=NodeStatus(
+                node_id="regtest-node-1",
+                state=NodeLifecycleState.HEALTHY,
+                health=NodeHealth(
+                    state=NodeLifecycleState.HEALTHY,
+                    chain="regtest",
+                    version=310100,
+                    blocks=10,
+                ),
+            ),
+        ),
+        patch("bitheim.interfaces.cli._is_container_execution_context", return_value=False),
+    ):
+        exit_code = main(["status", "--json"])
+        assert exit_code == 0
+        captured = capsys.readouterr()
+        assert '"state": "healthy"' in captured.out
+        assert '"version": 310100' in captured.out

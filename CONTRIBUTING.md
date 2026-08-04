@@ -116,6 +116,8 @@ uv run pytest
 git diff --check
 ```
 
+Existing tests integrated into `main` are regression contracts. Preserve them by default and add tests for new behavior. Do not delete, replace, weaken, or skip an existing test to make an implementation pass. Changes to existing tests require an intentional, documented contract change backed by an accepted SPEC, ADR, or maintainer decision, equivalent relevant coverage, and explicit reviewer approval. Reviewers evaluate the test diff against `main`, not only whether the suite passes or its test count increases.
+
 ---
 
 ## 5. Architectural Changes and Specifications (SPECs / ADRs)

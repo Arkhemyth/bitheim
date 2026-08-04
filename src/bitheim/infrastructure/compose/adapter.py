@@ -1,0 +1,682 @@
+"""Docker Compose infrastructure adapter for managed Bitcoin Core regtest nodes."""
+
+import ipaddress
+import json
+import os
+import shutil
+import subprocess
+import time
+from pathlib import Path
+from typing import Any
+
+from bitheim.application.ports import NodeLifecyclePort
+from bitheim.bootstrap.logging import get_logger
+from bitheim.domain.errors import (
+    LifecycleError,
+    RuntimeUnavailableError,
+    ShutdownTimeoutError,
+    StartupTimeoutError,
+)
+from bitheim.domain.node import NodeHealth, NodeLifecycleState, NodeStatus
+from bitheim.infrastructure.bitcoin.rpc_probe import (
+    EXPECTED_BITCOIN_VERSION,
+    EXPECTED_CHAIN,
+)
+from bitheim.infrastructure.compose.resources import (
+    get_bitcoin_core_resource_dir,
+    get_compose_template_path,
+)
+
+logger = get_logger("infrastructure.compose.adapter")
+
+# Compose project network suffix used by Docker Compose
+_COMPOSE_NETWORK_SUFFIX = "_bitheim-net"
+
+# Known container lifecycle states
+_RUNNING_STATES = frozenset({"running"})
+_STOPPED_STATES = frozenset({"exited", "dead", "created"})
+
+
+def _remaining(deadline: float) -> float:
+    """Return seconds until deadline. Negative means expired."""
+    return deadline - time.monotonic()
+
+
+class ComposeLifecycleAdapter(NodeLifecyclePort):
+    """Infrastructure adapter managing Bitcoin Core nodes via Docker Compose."""
+
+    def __init__(
+        self,
+        compose_template: Path | None = None,
+        compose_subnet: str = "172.28.0.0/16",
+        bitcoin_core_image: str = "bitheim-bitcoin-core:31.1",
+        bitheim_image: str = "bitheim:local",
+        docker_cmd: str = "docker",
+    ) -> None:
+        self._compose_template = compose_template or get_compose_template_path()
+        self._compose_subnet = compose_subnet
+        self._bitcoin_core_image = bitcoin_core_image
+        self._bitheim_image = bitheim_image
+        self._docker_cmd = docker_cmd
+
+    def _build_env(self, node_id: str) -> dict[str, str]:
+        """Construct isolated immutable environment variables for Compose execution."""
+        env = {
+            "PATH": os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin"),
+            "HOME": os.environ.get("HOME", "/root"),
+            "BITHEIM_NODE_ID": node_id,
+            "BITHEIM_COMPOSE_SUBNET": self._compose_subnet,
+            "BITHEIM_BITCOIN_CORE_IMAGE": self._bitcoin_core_image,
+            "BITHEIM_IMAGE": self._bitheim_image,
+        }
+        if "DOCKER_HOST" in os.environ:
+            env["DOCKER_HOST"] = os.environ["DOCKER_HOST"]
+        return env
+
+    # ------------------------------------------------------------------
+    # Internal helpers — all accept a monotonic deadline, never a duration
+    # ------------------------------------------------------------------
+
+    def _check_docker_runtime_available(self, deadline: float) -> None:
+        """Verify Docker executable exists and Docker daemon is responsive."""
+        if not shutil.which(self._docker_cmd):
+            raise RuntimeUnavailableError("Docker executable was not found in PATH")
+        r = _remaining(deadline)
+        if r <= 0:
+            raise RuntimeUnavailableError("Timeout budget expired before Docker daemon check")
+        try:
+            res = subprocess.run(
+                [self._docker_cmd, "info", "--format", "{{.ServerVersion}}"],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=r,
+            )
+            if res.returncode != 0:
+                logger.error(
+                    "Docker daemon check failed",
+                    extra={
+                        "event": "docker_daemon_unavailable",
+                        "data": {"error_type": "daemon_unreachable"},
+                    },
+                )
+                raise RuntimeUnavailableError("Docker daemon is not running or accessible")
+        except subprocess.TimeoutExpired as err:
+            raise RuntimeUnavailableError("Docker daemon check timed out") from err
+        except OSError as err:
+            raise RuntimeUnavailableError("Failed to execute Docker daemon check") from err
+
+    def _check_subnet_collision(self, node_id: str, deadline: float) -> None:
+        """Verify configured compose subnet does not overlap with existing networks.
+
+        Each blocking call recomputes remaining from the shared deadline.
+        """
+        try:
+            target_net = ipaddress.ip_network(self._compose_subnet, strict=False)
+        except ValueError as err:
+            raise LifecycleError("Configured compose subnet is invalid") from err
+
+        r = _remaining(deadline)
+        if r <= 0:
+            raise RuntimeUnavailableError("Timeout budget expired before subnet collision check")
+
+        try:
+            res = subprocess.run(
+                [self._docker_cmd, "network", "ls", "--format", "{{.Name}}"],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=r,
+            )
+            if res.returncode != 0:
+                raise RuntimeUnavailableError("Failed to list existing Docker networks")
+
+            network_names = [n.strip() for n in res.stdout.splitlines() if n.strip()]
+            project_network = f"{node_id}{_COMPOSE_NETWORK_SUFFIX}"
+
+            for name in network_names:
+                if name == project_network:
+                    continue
+
+                r = _remaining(deadline)
+                if r <= 0:
+                    raise RuntimeUnavailableError(
+                        "Timeout budget expired during subnet collision check"
+                    )
+
+                insp = subprocess.run(
+                    [
+                        self._docker_cmd,
+                        "network",
+                        "inspect",
+                        name,
+                        "--format",
+                        "{{range .IPAM.Config}}{{.Subnet}} {{end}}",
+                    ],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                    timeout=r,
+                )
+                if insp.returncode != 0:
+                    raise RuntimeUnavailableError(
+                        "Failed to inspect Docker network during subnet collision check"
+                    )
+
+                subnets = [s.strip() for s in insp.stdout.split() if s.strip()]
+                for sub in subnets:
+                    try:
+                        existing_net = ipaddress.ip_network(sub, strict=False)
+                    except ValueError as err:
+                        raise LifecycleError(
+                            "Malformed subnet encountered during collision check"
+                        ) from err
+
+                    if target_net.overlaps(existing_net):
+                        logger.error(
+                            "Subnet collision detected during preflight check",
+                            extra={
+                                "event": "subnet_collision_detected",
+                                "data": {"error_type": "network_collision"},
+                            },
+                        )
+                        raise LifecycleError(
+                            "Configured compose subnet overlaps with an existing Docker network"
+                        )
+        except (subprocess.TimeoutExpired, OSError) as err:
+            raise RuntimeUnavailableError("Docker network inspection failed") from err
+
+    def _ensure_image_available(
+        self,
+        image_ref: str,
+        build_context: Path | None,
+        deadline: float,
+    ) -> None:
+        """Ensure a container image exists locally, optionally building from context.
+
+        Distinguishes confirmed image-not-found from daemon/permission/malformed
+        failures. Non-not-found errors fail closed.
+        """
+        r = _remaining(deadline)
+        if r <= 0:
+            raise RuntimeUnavailableError("Timeout budget expired before image availability check")
+
+        try:
+            insp = subprocess.run(
+                [self._docker_cmd, "image", "inspect", image_ref],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=r,
+            )
+            if insp.returncode == 0:
+                return
+
+            # Distinguish "not found" from other failures.
+            # Docker CLI outputs "No such image" on stderr for a clean miss.
+            stderr_lower = (insp.stderr or "").lower()
+            is_not_found = "no such image" in stderr_lower or "not found" in stderr_lower
+            if not is_not_found:
+                raise RuntimeUnavailableError(
+                    "Container image inspection failed with unexpected error"
+                )
+        except subprocess.TimeoutExpired as err:
+            raise RuntimeUnavailableError("Container image inspection timed out") from err
+        except OSError as err:
+            raise RuntimeUnavailableError("Failed to inspect container image") from err
+
+        # Image is confirmed missing — build if context is provided
+        if build_context is None:
+            raise RuntimeUnavailableError(
+                "Required container image is not available and no build context is configured"
+            )
+
+        dockerfile = build_context / "Dockerfile"
+        if not dockerfile.exists():
+            raise RuntimeUnavailableError("Dockerfile asset is missing from packaged resources")
+
+        logger.info(
+            "Building container image from packaged assets",
+            extra={
+                "event": "image_build_started",
+                "data": {"build_target": "infrastructure"},
+            },
+        )
+        r = _remaining(deadline)
+        if r <= 0:
+            raise RuntimeUnavailableError("Timeout budget expired before image build")
+
+        try:
+            build_res = subprocess.run(
+                [self._docker_cmd, "build", "-t", image_ref, str(build_context)],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=r,
+            )
+            if build_res.returncode != 0:
+                logger.error(
+                    "Container image build failed",
+                    extra={
+                        "event": "image_build_failed",
+                        "data": {"error_type": "build_error"},
+                    },
+                )
+                raise RuntimeUnavailableError("Failed to build required container image")
+        except subprocess.TimeoutExpired as err:
+            raise RuntimeUnavailableError("Container image build timed out") from err
+        except OSError as err:
+            raise RuntimeUnavailableError("Failed to invoke Docker build") from err
+
+    # ------------------------------------------------------------------
+    # Public port implementations
+    # ------------------------------------------------------------------
+
+    def start(self, node_id: str, timeout: float = 30.0) -> None:
+        """Start managed node project via Docker Compose.
+
+        Ensures both Bitcoin Core and Bitheim images are available before
+        starting the long-running bitcoin-core service.
+        """
+        deadline = time.monotonic() + timeout
+
+        self._check_docker_runtime_available(deadline)
+        self._check_subnet_collision(node_id, deadline)
+
+        # Ensure Bitcoin Core image
+        btc_resource_dir = get_bitcoin_core_resource_dir()
+        self._ensure_image_available(self._bitcoin_core_image, btc_resource_dir, deadline)
+
+        # Ensure Bitheim application image (needed for delegated health probes).
+        # The Bitheim image requires a project-root build context (pyproject.toml,
+        # uv.lock, src/) that is only available from a repository checkout.
+        # When the image does not exist and no checkout-relative Dockerfile is
+        # found, _ensure_image_available raises RuntimeUnavailableError with a
+        # clear message.  Installed-wheel users must pre-build or pull the image.
+        bitheim_build_ctx = self._locate_bitheim_build_context()
+        self._ensure_image_available(self._bitheim_image, bitheim_build_ctx, deadline)
+
+        env = self._build_env(node_id)
+        cmd = [
+            self._docker_cmd,
+            "compose",
+            "-f",
+            str(self._compose_template),
+            "--project-name",
+            node_id,
+            "up",
+            "-d",
+            "bitcoin-core",
+        ]
+
+        r = _remaining(deadline)
+        if r <= 0:
+            raise StartupTimeoutError("Timeout budget expired before compose up")
+
+        logger.debug(
+            "Executing compose up command",
+            extra={"event": "compose_up_invoked", "data": {}},
+        )
+        try:
+            res = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                check=False,
+                env=env,
+                timeout=r,
+            )
+            if res.returncode != 0:
+                logger.error(
+                    "Compose up command failed",
+                    extra={
+                        "event": "compose_up_failed",
+                        "data": {"error_type": "process_error"},
+                    },
+                )
+                raise LifecycleError("Failed to start node services via Docker Compose")
+        except subprocess.TimeoutExpired as err:
+            raise StartupTimeoutError("Docker Compose up timed out") from err
+        except OSError as err:
+            raise RuntimeUnavailableError("Failed to execute Docker Compose") from err
+
+    def stop(self, node_id: str, timeout: float = 30.0) -> None:
+        """Gracefully stop managed node project via Docker Compose.
+
+        All internal calls share a single monotonic deadline.
+        """
+        deadline = time.monotonic() + timeout
+
+        self._check_docker_runtime_available(deadline)
+
+        current_state = self._get_lifecycle_state_deadline(node_id, deadline)
+        if current_state == NodeLifecycleState.STOPPED:
+            logger.debug(
+                "Node is already stopped",
+                extra={"event": "compose_stop_noop", "data": {}},
+            )
+            return
+
+        r = _remaining(deadline)
+        if r <= 0:
+            raise ShutdownTimeoutError("Timeout budget expired before compose stop")
+
+        grace_seconds = max(1, int(r))
+        env = self._build_env(node_id)
+        cmd = [
+            self._docker_cmd,
+            "compose",
+            "-f",
+            str(self._compose_template),
+            "--project-name",
+            node_id,
+            "stop",
+            "-t",
+            str(grace_seconds),
+        ]
+
+        logger.debug(
+            "Executing compose stop command",
+            extra={"event": "compose_stop_invoked", "data": {}},
+        )
+        try:
+            # subprocess timeout is capped to remaining budget, not grace + padding
+            r = _remaining(deadline)
+            if r <= 0:
+                raise ShutdownTimeoutError("Timeout budget expired before compose stop")
+            res = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                check=False,
+                env=env,
+                timeout=r,
+            )
+            if res.returncode != 0:
+                logger.error(
+                    "Compose stop command failed",
+                    extra={
+                        "event": "compose_stop_failed",
+                        "data": {"error_type": "process_error"},
+                    },
+                )
+                raise LifecycleError("Failed to stop node services via Docker Compose")
+
+            post_state = self._get_lifecycle_state_deadline(node_id, deadline)
+            if post_state != NodeLifecycleState.STOPPED:
+                raise ShutdownTimeoutError("Node services failed to stop within grace period")
+        except subprocess.TimeoutExpired as err:
+            raise ShutdownTimeoutError("Docker Compose stop timed out") from err
+        except OSError as err:
+            raise RuntimeUnavailableError("Failed to execute Docker Compose") from err
+
+    def get_lifecycle_state(self, node_id: str) -> NodeLifecycleState:
+        """Inspect container process state for the project via Docker Compose.
+
+        Uses a default 10 s budget. For deadline-scoped calls use
+        _get_lifecycle_state_deadline.
+        """
+        return self._get_lifecycle_state_deadline(node_id, time.monotonic() + 10.0)
+
+    def probe_health(self, node_id: str, timeout: float = 5.0) -> NodeHealth:
+        """Execute read-only health probe through the authorized Bitheim boundary.
+
+        SPEC-0004 §5.1: application/RPC probes run through the unprivileged
+        one-shot bitheim service on the private network without implicitly
+        starting dependencies (--no-deps).
+
+        All internal calls share a single monotonic deadline derived from
+        *timeout*.  Never raises StartupTimeoutError — returns UNKNOWN on
+        expired budget so callers (status) stay read-only.
+        """
+        if timeout <= 0:
+            return NodeHealth(state=NodeLifecycleState.UNKNOWN, details="timeout_expired")
+
+        deadline = time.monotonic() + timeout
+
+        try:
+            self._check_docker_runtime_available(deadline)
+        except RuntimeUnavailableError:
+            return NodeHealth(state=NodeLifecycleState.UNKNOWN, details="runtime_unavailable")
+
+        state = self._get_lifecycle_state_deadline(node_id, deadline)
+        if state == NodeLifecycleState.STOPPED:
+            return NodeHealth(state=NodeLifecycleState.STOPPED, details="node_stopped")
+
+        r = _remaining(deadline)
+        if r <= 0:
+            return NodeHealth(state=NodeLifecycleState.UNKNOWN, details="timeout_expired")
+
+        env = self._build_env(node_id)
+        cmd = [
+            self._docker_cmd,
+            "compose",
+            "-f",
+            str(self._compose_template),
+            "--project-name",
+            node_id,
+            "run",
+            "--rm",
+            "--no-deps",
+            "-T",
+            "bitheim",
+            "status",
+            "--json",
+        ]
+
+        try:
+            res = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                check=False,
+                env=env,
+                timeout=r,
+            )
+
+            if res.returncode != 0:
+                stderr_lower = res.stderr.lower() if res.stderr else ""
+                if "no such service" in stderr_lower or "not found" in stderr_lower:
+                    return NodeHealth(
+                        state=NodeLifecycleState.UNHEALTHY,
+                        details="bitheim_service_unavailable",
+                    )
+                return NodeHealth(
+                    state=NodeLifecycleState.UNHEALTHY,
+                    details="delegated_probe_failed",
+                )
+
+            return self._parse_delegated_health(res.stdout)
+        except (subprocess.TimeoutExpired, OSError):
+            return NodeHealth(state=NodeLifecycleState.UNKNOWN, details="probe_failed")
+
+    def get_status(self, node_id: str) -> NodeStatus:
+        """Inspect and return combined domain status and health.
+
+        Read-only — never raises StartupTimeoutError.
+        """
+        state = self.get_lifecycle_state(node_id)
+        if state == NodeLifecycleState.STOPPED:
+            return NodeStatus(
+                node_id=node_id,
+                state=NodeLifecycleState.STOPPED,
+                health=NodeHealth(state=NodeLifecycleState.STOPPED, details="node_stopped"),
+            )
+
+        health = self.probe_health(node_id)
+
+        if state == NodeLifecycleState.UNKNOWN:
+            return NodeStatus(
+                node_id=node_id,
+                state=NodeLifecycleState.UNKNOWN,
+                health=health,
+            )
+
+        return NodeStatus(
+            node_id=node_id,
+            state=health.state,
+            health=health,
+        )
+
+    # ------------------------------------------------------------------
+    # Private helpers
+    # ------------------------------------------------------------------
+
+    def _locate_bitheim_build_context(self) -> Path | None:
+        """Locate the repository-root Dockerfile for building the Bitheim image.
+
+        Returns None when the Dockerfile cannot be found (installed-wheel case).
+        The caller receives None and _ensure_image_available will raise a clear
+        RuntimeUnavailableError if the image is also missing from the daemon.
+        """
+        # Relative to compose resources module
+        repo_root = Path(__file__).resolve().parents[4]
+        candidate = repo_root / "Dockerfile"
+        if candidate.is_file():
+            return repo_root
+        return None
+
+    def _get_lifecycle_state_deadline(self, node_id: str, deadline: float) -> NodeLifecycleState:
+        """Inspect container process state using the shared deadline.
+
+        Returns UNKNOWN for ambiguous, malformed, or unexpected output.
+        Returns UNKNOWN when containers exist but bitcoin-core is absent
+        (non-empty unexpected services).
+        """
+        self._check_docker_runtime_available(deadline)
+        env = self._build_env(node_id)
+        cmd = [
+            self._docker_cmd,
+            "compose",
+            "-f",
+            str(self._compose_template),
+            "--project-name",
+            node_id,
+            "ps",
+            "--format",
+            "json",
+        ]
+
+        r = _remaining(deadline)
+        if r <= 0:
+            raise RuntimeUnavailableError("Timeout budget expired before lifecycle state check")
+
+        try:
+            res = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                check=False,
+                env=env,
+                timeout=r,
+            )
+            if res.returncode != 0:
+                logger.error(
+                    "Compose ps command failed",
+                    extra={
+                        "event": "compose_ps_failed",
+                        "data": {"error_type": "process_error"},
+                    },
+                )
+                raise RuntimeUnavailableError("Failed to inspect node services via Docker Compose")
+
+            stdout = res.stdout.strip()
+            if not stdout:
+                return NodeLifecycleState.STOPPED
+
+            containers: list[dict[str, Any]] = []
+            try:
+                if stdout.startswith("["):
+                    parsed = json.loads(stdout)
+                    if isinstance(parsed, list):
+                        containers = [c for c in parsed if isinstance(c, dict)]
+                else:
+                    for line in stdout.splitlines():
+                        stripped = line.strip()
+                        if stripped:
+                            obj = json.loads(stripped)
+                            if isinstance(obj, dict):
+                                containers.append(obj)
+            except json.JSONDecodeError:
+                return NodeLifecycleState.UNKNOWN
+
+            if not containers:
+                return NodeLifecycleState.STOPPED
+
+            # Find bitcoin-core service by exact name match
+            for c in containers:
+                service = c.get("Service", "")
+                if service != "bitcoin-core":
+                    continue
+
+                state = str(c.get("State", "")).lower()
+                if state in _RUNNING_STATES:
+                    health = str(c.get("Health", "")).lower()
+                    if health == "unhealthy":
+                        return NodeLifecycleState.UNHEALTHY
+                    return NodeLifecycleState.STARTING
+                if state in _STOPPED_STATES:
+                    return NodeLifecycleState.STOPPED
+
+                # Unrecognized state → UNKNOWN
+                return NodeLifecycleState.UNKNOWN
+
+            # Containers exist but bitcoin-core is not among them → UNKNOWN
+            return NodeLifecycleState.UNKNOWN
+        except subprocess.TimeoutExpired as err:
+            raise RuntimeUnavailableError("Docker Compose ps timed out") from err
+        except OSError as err:
+            raise RuntimeUnavailableError("Failed to execute Docker Compose ps") from err
+
+    @staticmethod
+    def _parse_delegated_health(stdout: str) -> NodeHealth:
+        """Parse and validate delegated health probe JSON.
+
+        Enforces exact chain/version at this boundary — does not blindly trust
+        a state string from the delegated container.  A HEALTHY result requires
+        chain == "regtest" and version == 310100 with correct types.
+        """
+        raw = stdout.strip()
+        if not raw:
+            return NodeHealth(state=NodeLifecycleState.UNKNOWN, details="empty_probe_response")
+
+        try:
+            probe_data = json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            return NodeHealth(state=NodeLifecycleState.UNKNOWN, details="malformed_probe_response")
+
+        if not isinstance(probe_data, dict):
+            return NodeHealth(state=NodeLifecycleState.UNKNOWN, details="malformed_probe_response")
+
+        health_data = probe_data.get("health", {})
+        if not isinstance(health_data, dict):
+            return NodeHealth(state=NodeLifecycleState.UNKNOWN, details="malformed_probe_response")
+
+        state_str = str(health_data.get("state", "unknown")).lower()
+        chain = health_data.get("chain")
+        version = health_data.get("version")
+        blocks = health_data.get("blocks")
+        headers = health_data.get("headers")
+        details = health_data.get("details")
+
+        try:
+            health_state = NodeLifecycleState(state_str)
+        except ValueError:
+            health_state = NodeLifecycleState.UNKNOWN
+
+        # Independent enforcement: HEALTHY requires exact chain and version
+        if health_state == NodeLifecycleState.HEALTHY and (
+            chain != EXPECTED_CHAIN or version != EXPECTED_BITCOIN_VERSION
+        ):
+            health_state = NodeLifecycleState.INCOMPATIBLE
+            if details is None or details == "ready":
+                details = "delegated_contract_mismatch"
+
+        return NodeHealth(
+            state=health_state,
+            chain=str(chain) if isinstance(chain, str) else None,
+            version=int(version) if isinstance(version, int) else None,
+            blocks=int(blocks) if isinstance(blocks, int) else None,
+            headers=int(headers) if isinstance(headers, int) else None,
+            details=str(details) if details is not None else None,
+        )

@@ -28,6 +28,9 @@ uv sync --locked --all-groups
 uv run bitheim --help
 uv run bitheim --version
 uv run bitheim doctor
+uv run bitheim start
+uv run bitheim status
+uv run bitheim stop
 ```
 
 ## Container Usage
