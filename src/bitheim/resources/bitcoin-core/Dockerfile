@@ -18,7 +18,7 @@ RUN set -eux; \
         EXPECTED_SHA256="b80d9c3e04da78fb6f0569685673418cf686fadba9042d926d13fb87ff503f9e"; \
     elif [ "${TARGETARCH}" = "arm64" ]; then \
         ARCH="aarch64-linux-gnu"; \
-        EXPECTED_SHA256="a90623e1fbe5b84c8567540212dae726487e4cbe7754b29bb8fc6f54c3fc2bb9"; \
+        EXPECTED_SHA256="dcf1873f2208ba4f962f3398d47e154c39c0084be8f4553e05c940d0ace3d004"; \
     else \
         echo "Unsupported target architecture: ${TARGETARCH}" >&2; \
         exit 1; \
