@@ -94,7 +94,7 @@ jobs:
 
       - name: Smoke test Bitcoin Core daemon version
         run: |
-          VERSION_OUTPUT=$(docker run --rm bitheim-bitcoin-core:ci --version)
+          VERSION_OUTPUT=$(docker run --rm bitheim-bitcoin-core:ci -conf=/etc/bitcoin/bitcoin.conf -datadir=/data/bitcoin --version)
           echo "${VERSION_OUTPUT}"
           echo "${VERSION_OUTPUT}" | grep -q "Bitcoin Core daemon version"
 
