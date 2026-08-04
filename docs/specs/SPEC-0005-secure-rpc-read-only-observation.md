@@ -1,6 +1,6 @@
 # SPEC-0005: Secure RPC and Read-Only Observation
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Author:** Bitheim Contributors
 - **Date:** 2026-08-04
 - **Target:** `v0.2.0`, Phase 3

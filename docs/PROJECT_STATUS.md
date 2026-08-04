@@ -14,7 +14,7 @@ Define the secure, typed, read-only RPC observation contract for node, blockchai
 
 ## Active Specifications
 - [`SPEC-0004: Managed Regtest Node Runtime Contract`](specs/SPEC-0004-managed-regtest-node-runtime.md) (Accepted)
-- [`SPEC-0005: Secure RPC and Read-Only Observation`](specs/SPEC-0005-secure-rpc-read-only-observation.md) (Proposed)
+- [`SPEC-0005: Secure RPC and Read-Only Observation`](specs/SPEC-0005-secure-rpc-read-only-observation.md) (Accepted)
 
 ## Relevant Architecture Decisions
 - [`ADR-0001: Modular Monolith`](adr/ADR-0001-modular-monolith.md)
@@ -26,7 +26,7 @@ Define the secure, typed, read-only RPC observation contract for node, blockchai
 Architecture and specification planning
 
 ## Next Action
-Independently review and accept `SPEC-0005`, then delegate the bounded Phase 3 implementation.
+Plan and delegate the bounded Phase 3 implementation governed by accepted `SPEC-0005`.
 
 ## Blockers
 None.
