@@ -7,13 +7,14 @@
 [`docs/releases/v0.2.0-plan.md`](releases/v0.2.0-plan.md)
 
 ## Current Phase
-Phase 2 of 6 — Managed Node Lifecycle and Health
+Phase 3 of 6 — Secure RPC and Read-Only Observation
 
 ## Active Increment
-Implement Docker/Compose prerequisite diagnostics, the verified Bitcoin Core runtime, isolated Compose topology, host-side command facade, managed node lifecycle, and bounded health state defined by the accepted runtime contract. Preserve portable lifecycle boundaries without implementing a speculative native runtime.
+Define the secure, typed, read-only RPC observation contract for node, blockchain, block, mempool, and peer inspection before implementation.
 
 ## Active Specifications
 - [`SPEC-0004: Managed Regtest Node Runtime Contract`](specs/SPEC-0004-managed-regtest-node-runtime.md) (Accepted)
+- [`SPEC-0005: Secure RPC and Read-Only Observation`](specs/SPEC-0005-secure-rpc-read-only-observation.md) (Accepted)
 
 ## Relevant Architecture Decisions
 - [`ADR-0001: Modular Monolith`](adr/ADR-0001-modular-monolith.md)
@@ -22,10 +23,10 @@ Implement Docker/Compose prerequisite diagnostics, the verified Bitcoin Core run
 - [`ADR-0005: Docker Compose Runtime Topology`](adr/ADR-0005-docker-compose-runtime-topology.md) (Accepted)
 
 ## Status
-Implementation in progress
+Architecture and specification planning
 
 ## Next Action
-Integrate `feat/add-managed-node-lifecycle` via reviewed PR to `main` and advance to Phase 3.
+Plan and delegate the bounded Phase 3 implementation governed by accepted `SPEC-0005`.
 
 ## Blockers
 None.
@@ -54,9 +55,10 @@ None.
 - Aligned GitHub Actions CI type checking gate (`uv run mypy src tests`) with project configuration.
 - Configured and verified GitHub repository ruleset protecting `main` with required pull requests, no bypass actors, conversation resolution, and mandatory strict status checks (`Code Quality & Tests` and `Container Image & Multi-Arch Build`).
 - Defined architectural specification [`docs/specs/SPEC-0004-managed-regtest-node-runtime.md`](specs/SPEC-0004-managed-regtest-node-runtime.md) and [`ADR-0005: Docker Compose Runtime Topology`](adr/ADR-0005-docker-compose-runtime-topology.md) for Phase 1.
+- Implemented and integrated Phase 2 managed node lifecycle and health through PR #10: verified Bitcoin Core 31.1 images for `amd64` and `arm64`, isolated Compose topology, typed lifecycle boundaries, delegated authenticated health probing, secure storage separation, and real CI integration validation.
 
 ## In Progress
-- Phase 2 implementation on `feat/add-managed-node-lifecycle`: verified Bitcoin Core 31.1 container image, isolated Docker Compose topology, domain lifecycle models, `NodeLifecyclePort`, `ComposeLifecycleAdapter`, `NodeLifecycleService`, host-side CLI commands (`start`, `stop`, `status`), `bitheim doctor` Compose prerequisite diagnostics, and execution-context delegation boundary.
+- Phase 3 contract definition and independent review for secure RPC and read-only observation.
 
 ## Future Hardening (Post-v0.1.0 / Towards v1.0, Non-Blocking)
 - Automated code coverage measurement and thresholds.
