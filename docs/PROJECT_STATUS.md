@@ -10,7 +10,7 @@
 Phase 3 of 6 — Secure RPC and Read-Only Observation
 
 ## Active Increment
-Phase 3A: Implement secure synchronous stdlib JSON-RPC observation boundary, NodeOverview domain model, application service, and inspect node CLI subcommand.
+Phase 3B.1: Plan and define protected executable contracts for read-only block inspection by hash or height before implementation begins.
 
 ## Active Specifications
 - [`SPEC-0004: Managed Regtest Node Runtime Contract`](specs/SPEC-0004-managed-regtest-node-runtime.md) (Accepted)
@@ -23,10 +23,10 @@ Phase 3A: Implement secure synchronous stdlib JSON-RPC observation boundary, Nod
 - [`ADR-0005: Docker Compose Runtime Topology`](adr/ADR-0005-docker-compose-runtime-topology.md) (Accepted)
 
 ## Status
-Phase 3A implementation is independently reviewed and ready for integration. Phase 3 remains incomplete.
+Phase 3A was integrated through PR #12. Phase 3B is split into two contract-first vertical increments: Phase 3B.1 for block inspection, followed by Phase 3B.2 for mempool and peer observation. The reusable contract-first increment workflow is established in [`.agents/rules/increment-workflow.md`](../.agents/rules/increment-workflow.md). Phase 3 remains incomplete.
 
 ## Next Action
-Commit Phase 3A, open its pull request, and validate the protected contracts and Compose integration in CI before merge.
+Prepare the protected executable contracts for Phase 3B.1, verify that they fail only for the intentionally missing block-inspection capability, and record their paths and checksums before delegating implementation.
 
 ## Blockers
 None.
@@ -56,9 +56,11 @@ None.
 - Configured and verified GitHub repository ruleset protecting `main` with required pull requests, no bypass actors, conversation resolution, and mandatory strict status checks (`Code Quality & Tests` and `Container Image & Multi-Arch Build`).
 - Defined architectural specification [`docs/specs/SPEC-0004-managed-regtest-node-runtime.md`](specs/SPEC-0004-managed-regtest-node-runtime.md) and [`ADR-0005: Docker Compose Runtime Topology`](adr/ADR-0005-docker-compose-runtime-topology.md) for Phase 1.
 - Implemented and integrated Phase 2 managed node lifecycle and health through PR #10: verified Bitcoin Core 31.1 images for `amd64` and `arm64`, isolated Compose topology, typed lifecycle boundaries, delegated authenticated health probing, secure storage separation, and real CI integration validation.
+- Implemented and integrated Phase 3A secure node and chain observation through PR #12: bounded authenticated JSON-RPC, immutable node overview, application and Compose delegation boundaries, deterministic human and JSON CLI output, read-only doctor integration, protected contracts, and real Bitcoin Core 31.1 validation.
+- Established the reusable contract-first increment workflow and split Phase 3B into independently reviewable block-inspection and mempool/peer vertical increments.
 
 ## In Progress
-- Phase 3A implementation for secure RPC and read-only observation.
+- Phase 3B.1 planning and contract-first preparation for read-only block inspection.
 
 ## Future Hardening (Post-v0.1.0 / Towards v1.0, Non-Blocking)
 - Automated code coverage measurement and thresholds.

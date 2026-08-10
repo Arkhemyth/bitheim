@@ -24,11 +24,17 @@ To understand the project and begin contributing, read the repository documents 
 
    The project-level **Source of Truth** for Bitheim. It defines the overarching vision, architecture, domain boundaries, engineering standards, and roadmap up to `v1.0.0`.
 
-5. **[`.agents/rules/git-workflow.md`](.agents/rules/git-workflow.md)**
+5. **[`.agents/rules/increment-workflow.md`](.agents/rules/increment-workflow.md)**
+
+   Follow the contract-first sequence for increment sizing, executable contracts, protected tests, delegation, independent review, integration, and handoff.
+
+6. **[`.agents/rules/git-workflow.md`](.agents/rules/git-workflow.md)**
 
    The official rules for branch strategy, commit conventions, language standardization, and environment management.
 
 Before making changes, verify the repository state and work only within the assigned increment. When an integrated change advances the active phase, update the release plan and `docs/PROJECT_STATUS.md` in the same delivery so that the next contributor receives an accurate handoff.
+
+Implementation must not begin until the active increment is sufficiently specified and its required contract-first preparation is complete. `docs/PROJECT_STATUS.md` states whether the next action is planning, executable-contract preparation, implementation, review, or integration.
 
 ## Regression Test Preservation
 
