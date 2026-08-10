@@ -233,8 +233,11 @@ jobs:
             exit 1
           fi
           CATEGORY=$(echo "${INSPECT_ERR}" | grep 'bitheim.delegated-error' | jq -r '.category' || true)
-          test "${CATEGORY}" = "unavailable"
+          echo "Stopped-node inspection category: ${CATEGORY}"
+          # Bitcoin Core removes its ephemeral RPC cookie during shutdown.
+          test "${CATEGORY}" = "authentication"
           POST_INSPECT_STATE=$(docker compose -f docker/compose.yml --project-name ci-integration ps --format json | jq -r '.[].State' || true)
+          echo "Post-inspection running state: ${POST_INSPECT_STATE:-none}"
           test -z "${POST_INSPECT_STATE}"
 
       - name: Integration test — verify volume retention after stop
