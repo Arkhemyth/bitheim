@@ -10,7 +10,7 @@
 Phase 3 of 6 — Secure RPC and Read-Only Observation
 
 ## Active Increment
-Phase 3B.1: Plan and define protected executable contracts for read-only block inspection by hash or height before implementation begins.
+Phase 3B.1: Implement read-only block inspection by hash or height against the protected executable contracts.
 
 ## Active Specifications
 - [`SPEC-0004: Managed Regtest Node Runtime Contract`](specs/SPEC-0004-managed-regtest-node-runtime.md) (Accepted)
@@ -23,10 +23,16 @@ Phase 3B.1: Plan and define protected executable contracts for read-only block i
 - [`ADR-0005: Docker Compose Runtime Topology`](adr/ADR-0005-docker-compose-runtime-topology.md) (Accepted)
 
 ## Status
-Phase 3A was integrated through PR #12. Phase 3B is split into two contract-first vertical increments: Phase 3B.1 for block inspection, followed by Phase 3B.2 for mempool and peer observation. The reusable contract-first increment workflow is established in [`.agents/rules/increment-workflow.md`](../.agents/rules/increment-workflow.md). Phase 3 remains incomplete.
+Phase 3A was integrated through PR #12. Phase 3B is split into two contract-first vertical increments: Phase 3B.1 for block inspection, followed by Phase 3B.2 for mempool and peer observation. The Phase 3B.1 executable contracts are defined and intentionally remain strict expected failures only while the complete public block-inspection surface is absent. Phase 3 remains incomplete.
+
+## Protected Executable Contracts
+- Path: [`tests/test_phase3b1_block_contracts.py`](../tests/test_phase3b1_block_contracts.py)
+- SHA-256: `c13cc16c1155d4517542c4ef3928eedb55455da51014c26b011bc4533014e59a`
+- Baseline: 48 contract cases, conditionally `xfail(strict=True)` until the complete Phase 3B.1 surface exists; the same file must then pass without modification.
+- Preservation rule: implementation may add complementary tests but must not modify this file or remove, skip, weaken, replace, or broadly rewrite tests integrated into `main` without explicit maintainer approval under [the increment workflow](../.agents/rules/increment-workflow.md).
 
 ## Next Action
-Prepare the protected executable contracts for Phase 3B.1, verify that they fail only for the intentionally missing block-inspection capability, and record their paths and checksums before delegating implementation.
+Integrate the protected Phase 3B.1 contracts, then delegate only the block-inspection implementation. The implementation handoff must include the protected path and checksum, prohibit changes to historical and protected tests, require an explicit report of every test-file change, and withhold commit, push, and pull-request creation until independent review.
 
 ## Blockers
 None.
