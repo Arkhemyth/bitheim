@@ -20,6 +20,7 @@ from bitheim.bootstrap.logging import (
     parse_log_level,
     setup_logging,
 )
+from bitheim.domain.node import NodeLifecycleState
 from bitheim.interfaces.cli import handle_doctor, main
 
 
@@ -247,7 +248,12 @@ def test_handle_doctor_structured_logging(
         config = None
         data_dir = str(tmp_path / "data")
 
-    with patch("shutil.which", return_value="/usr/bin/docker"), patch("subprocess.run") as mock_sub:
+    with (
+        patch("shutil.which", return_value="/usr/bin/docker"),
+        patch("subprocess.run") as mock_sub,
+        patch("bitheim.interfaces.cli.ComposeLifecycleAdapter.get_lifecycle_state") as mock_state,
+    ):
+        mock_state.return_value = NodeLifecycleState.STOPPED
         mock_sub.return_value = MagicMock(returncode=0, stdout="26.0.0\n")
         exit_code = handle_doctor(Args())  # type: ignore[arg-type]
     assert exit_code == 0

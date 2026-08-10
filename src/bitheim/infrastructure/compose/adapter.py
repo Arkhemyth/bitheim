@@ -3,6 +3,7 @@
 import ipaddress
 import json
 import os
+import re
 import shutil
 import subprocess
 import time
@@ -13,11 +14,23 @@ from bitheim.application.ports import NodeLifecyclePort
 from bitheim.bootstrap.logging import get_logger
 from bitheim.domain.errors import (
     LifecycleError,
+    RpcAuthenticationError,
+    RpcError,
+    RpcIncompatibleNodeError,
+    RpcMalformedResponseError,
+    RpcResponseSizeExceededError,
+    RpcTimeoutError,
+    RpcUnavailableError,
     RuntimeUnavailableError,
     ShutdownTimeoutError,
     StartupTimeoutError,
 )
-from bitheim.domain.node import NodeHealth, NodeLifecycleState, NodeStatus
+from bitheim.domain.node import (
+    NodeHealth,
+    NodeLifecycleState,
+    NodeOverview,
+    NodeStatus,
+)
 from bitheim.infrastructure.bitcoin.rpc_probe import (
     EXPECTED_BITCOIN_VERSION,
     EXPECTED_CHAIN,
@@ -35,6 +48,32 @@ _COMPOSE_NETWORK_SUFFIX = "_bitheim-net"
 # Known container lifecycle states
 _RUNNING_STATES = frozenset({"running"})
 _STOPPED_STATES = frozenset({"exited", "dead", "created"})
+
+_HEX_64_REGEX = re.compile(r"^[0-9a-fA-F]{64}$")
+
+
+def _reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    """Parse JSON object rejecting duplicate object keys."""
+    res: dict[str, Any] = {}
+    for k, v in pairs:
+        if k in res:
+            raise ValueError(f"Duplicate JSON key: {k}")
+        res[k] = v
+    return res
+
+
+def _check_json_depth(obj: Any, depth: int = 1, max_depth: int = 4) -> None:
+    """Validate JSON nesting depth."""
+    if depth > max_depth:
+        raise RpcMalformedResponseError(
+            f"Delegated JSON exceeds maximum nesting depth of {max_depth}."
+        )
+    if isinstance(obj, dict):
+        for v in obj.values():
+            _check_json_depth(v, depth + 1, max_depth)
+    elif isinstance(obj, list):
+        for item in obj:
+            _check_json_depth(item, depth + 1, max_depth)
 
 
 def _remaining(deadline: float) -> float:
@@ -101,10 +140,10 @@ class ComposeLifecycleAdapter(NodeLifecyclePort):
                     },
                 )
                 raise RuntimeUnavailableError("Docker daemon is not running or accessible")
-        except subprocess.TimeoutExpired as err:
-            raise RuntimeUnavailableError("Docker daemon check timed out") from err
-        except OSError as err:
-            raise RuntimeUnavailableError("Failed to execute Docker daemon check") from err
+        except subprocess.TimeoutExpired:
+            raise RuntimeUnavailableError("Docker daemon check timed out") from None
+        except OSError:
+            raise RuntimeUnavailableError("Failed to execute Docker daemon check") from None
 
     def _check_subnet_collision(self, node_id: str, deadline: float) -> None:
         """Verify configured compose subnet does not overlap with existing networks.
@@ -113,8 +152,8 @@ class ComposeLifecycleAdapter(NodeLifecyclePort):
         """
         try:
             target_net = ipaddress.ip_network(self._compose_subnet, strict=False)
-        except ValueError as err:
-            raise LifecycleError("Configured compose subnet is invalid") from err
+        except ValueError:
+            raise LifecycleError("Configured compose subnet is invalid") from None
 
         r = _remaining(deadline)
         if r <= 0:
@@ -167,10 +206,10 @@ class ComposeLifecycleAdapter(NodeLifecyclePort):
                 for sub in subnets:
                     try:
                         existing_net = ipaddress.ip_network(sub, strict=False)
-                    except ValueError as err:
+                    except ValueError:
                         raise LifecycleError(
                             "Malformed subnet encountered during collision check"
-                        ) from err
+                        ) from None
 
                     if target_net.overlaps(existing_net):
                         logger.error(
@@ -183,8 +222,8 @@ class ComposeLifecycleAdapter(NodeLifecyclePort):
                         raise LifecycleError(
                             "Configured compose subnet overlaps with an existing Docker network"
                         )
-        except (subprocess.TimeoutExpired, OSError) as err:
-            raise RuntimeUnavailableError("Docker network inspection failed") from err
+        except (subprocess.TimeoutExpired, OSError):
+            raise RuntimeUnavailableError("Docker network inspection failed") from None
 
     def _ensure_image_available(
         self,
@@ -220,10 +259,10 @@ class ComposeLifecycleAdapter(NodeLifecyclePort):
                 raise RuntimeUnavailableError(
                     "Container image inspection failed with unexpected error"
                 )
-        except subprocess.TimeoutExpired as err:
-            raise RuntimeUnavailableError("Container image inspection timed out") from err
-        except OSError as err:
-            raise RuntimeUnavailableError("Failed to inspect container image") from err
+        except subprocess.TimeoutExpired:
+            raise RuntimeUnavailableError("Container image inspection timed out") from None
+        except OSError:
+            raise RuntimeUnavailableError("Failed to inspect container image") from None
 
         # Image is confirmed missing — build if context is provided
         if build_context is None:
@@ -263,10 +302,10 @@ class ComposeLifecycleAdapter(NodeLifecyclePort):
                     },
                 )
                 raise RuntimeUnavailableError("Failed to build required container image")
-        except subprocess.TimeoutExpired as err:
-            raise RuntimeUnavailableError("Container image build timed out") from err
-        except OSError as err:
-            raise RuntimeUnavailableError("Failed to invoke Docker build") from err
+        except subprocess.TimeoutExpired:
+            raise RuntimeUnavailableError("Container image build timed out") from None
+        except OSError:
+            raise RuntimeUnavailableError("Failed to invoke Docker build") from None
 
     # ------------------------------------------------------------------
     # Public port implementations
@@ -335,10 +374,10 @@ class ComposeLifecycleAdapter(NodeLifecyclePort):
                     },
                 )
                 raise LifecycleError("Failed to start node services via Docker Compose")
-        except subprocess.TimeoutExpired as err:
-            raise StartupTimeoutError("Docker Compose up timed out") from err
-        except OSError as err:
-            raise RuntimeUnavailableError("Failed to execute Docker Compose") from err
+        except subprocess.TimeoutExpired:
+            raise StartupTimeoutError("Docker Compose up timed out") from None
+        except OSError:
+            raise RuntimeUnavailableError("Failed to execute Docker Compose") from None
 
     def stop(self, node_id: str, timeout: float = 30.0) -> None:
         """Gracefully stop managed node project via Docker Compose.
@@ -405,10 +444,10 @@ class ComposeLifecycleAdapter(NodeLifecyclePort):
             post_state = self._get_lifecycle_state_deadline(node_id, deadline)
             if post_state != NodeLifecycleState.STOPPED:
                 raise ShutdownTimeoutError("Node services failed to stop within grace period")
-        except subprocess.TimeoutExpired as err:
-            raise ShutdownTimeoutError("Docker Compose stop timed out") from err
-        except OSError as err:
-            raise RuntimeUnavailableError("Failed to execute Docker Compose") from err
+        except subprocess.TimeoutExpired:
+            raise ShutdownTimeoutError("Docker Compose stop timed out") from None
+        except OSError:
+            raise RuntimeUnavailableError("Failed to execute Docker Compose") from None
 
     def get_lifecycle_state(self, node_id: str) -> NodeLifecycleState:
         """Inspect container process state for the project via Docker Compose.
@@ -518,6 +557,229 @@ class ComposeLifecycleAdapter(NodeLifecyclePort):
             health=health,
         )
 
+    def inspect_node(self, node_id: str, timeout: float = 10.0) -> NodeOverview:
+        """Execute delegated read-only node inspection through the Bitheim boundary.
+
+        SPEC-0005 §4: Host facade delegates observation commands as one-shot
+        bitheim service processes on the private Compose network using
+        `docker compose run --rm --no-deps -T`. Delegation does not start,
+        recreate, or repair Bitcoin Core.
+
+        Args:
+            node_id: Cleaned and validated node identifier.
+            timeout: Command deadline in seconds.
+
+        Returns:
+            Validated NodeOverview domain object.
+
+        Raises:
+            RpcUnavailableError: If node is stopped or runtime is unreachable.
+            RpcTimeoutError: If execution exceeds deadline.
+            RpcError: On delegated inspection failure.
+        """
+        if timeout <= 0 or timeout > 60.0:
+            raise RpcError("Command deadline must be a positive finite value no greater than 60s.")
+
+        deadline = time.monotonic() + timeout
+
+        try:
+            self._check_docker_runtime_available(deadline)
+        except RuntimeUnavailableError:
+            raise RpcUnavailableError(
+                "Docker runtime is unavailable for node inspection."
+            ) from None
+
+        state = self._get_lifecycle_state_deadline(node_id, deadline)
+        if state == NodeLifecycleState.STOPPED:
+            raise RpcUnavailableError(
+                f"Managed node '{node_id}' is stopped. Start the node before inspecting."
+            )
+
+        r = _remaining(deadline)
+        if r <= 0:
+            raise RpcTimeoutError("Timeout budget expired before delegated node inspection.")
+
+        env = self._build_env(node_id)
+        cmd = [
+            self._docker_cmd,
+            "compose",
+            "-f",
+            str(self._compose_template),
+            "--project-name",
+            node_id,
+            "run",
+            "--rm",
+            "--no-deps",
+            "-T",
+            "bitheim",
+            "inspect",
+            "node",
+            "--json",
+        ]
+
+        try:
+            res = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                check=False,
+                env=env,
+                timeout=r,
+            )
+            if res.returncode != 0:
+                # Bounded parsing of structured child error contract from stderr
+                if res.stderr and len(res.stderr.encode("utf-8")) <= 16384:
+                    err_lines = res.stderr.strip().splitlines()
+                    if err_lines and (
+                        len(err_lines) == 1
+                        or (len(err_lines) == 2 and err_lines[1].startswith("bitheim: error:"))
+                    ):
+                        err_str = err_lines[0].strip()
+                        if err_str.startswith("{") and err_str.endswith("}"):
+                            import contextlib
+
+                            with contextlib.suppress(ValueError, TypeError):
+                                err_info = json.loads(
+                                    err_str, object_pairs_hook=_reject_duplicate_keys
+                                )
+                                if isinstance(err_info, dict):
+                                    err_type = None
+                                    if (
+                                        err_info.get("schema") == "bitheim.delegated-error"
+                                        and err_info.get("version") == 1
+                                        and set(err_info.keys())
+                                        == {"schema", "version", "category"}
+                                    ):
+                                        err_type = err_info.get("category")
+
+                                    if err_type == "authentication":
+                                        raise RpcAuthenticationError(
+                                            "Delegated RPC authentication failed."
+                                        )
+                                    if err_type == "incompatible":
+                                        raise RpcIncompatibleNodeError(
+                                            "Node reported incompatible chain or version."
+                                        )
+                                    if err_type == "timeout":
+                                        raise RpcTimeoutError(
+                                            "Delegated node inspection timed out."
+                                        )
+                                    if err_type == "malformed_response":
+                                        raise RpcMalformedResponseError(
+                                            "Delegated node inspection returned malformed response."
+                                        )
+                                    if err_type == "unavailable":
+                                        raise RpcUnavailableError(
+                                            "Delegated node inspection endpoint unavailable."
+                                        )
+                raise RpcUnavailableError("Delegated node inspection failed.")
+
+            if len(res.stdout.encode("utf-8")) > 65536:
+                raise RpcResponseSizeExceededError(
+                    "Delegated node inspection output exceeded size limit."
+                )
+
+            raw_out = res.stdout.strip()
+            data = json.loads(raw_out, object_pairs_hook=_reject_duplicate_keys)
+            if not isinstance(data, dict):
+                raise RpcMalformedResponseError(
+                    "Delegated node inspection returned non-object JSON."
+                )
+
+            _check_json_depth(data, depth=1)
+
+            # Strict field validation without coercion
+            version = data.get("version")
+            if type(version) is not int or isinstance(version, bool):
+                raise RpcMalformedResponseError("Invalid 'version' field in delegated output.")
+
+            subversion = data.get("subversion")
+            if (
+                not isinstance(subversion, str)
+                or not (0 < len(subversion.encode("utf-8")) <= 512)
+                or not all(" " <= c <= "~" for c in subversion)
+            ):
+                raise RpcMalformedResponseError("Invalid 'subversion' field in delegated output.")
+
+            network_active = data.get("network_active")
+            if not isinstance(network_active, bool):
+                raise RpcMalformedResponseError(
+                    "Invalid 'network_active' field in delegated output."
+                )
+
+            connections = data.get("connections")
+            if type(connections) is not int or isinstance(connections, bool) or connections < 0:
+                raise RpcMalformedResponseError("Invalid 'connections' field in delegated output.")
+
+            chain = data.get("chain")
+            if not isinstance(chain, str):
+                raise RpcMalformedResponseError("Invalid 'chain' field in delegated output.")
+
+            blocks = data.get("blocks")
+            if type(blocks) is not int or isinstance(blocks, bool) or blocks < 0:
+                raise RpcMalformedResponseError("Invalid 'blocks' field in delegated output.")
+
+            headers = data.get("headers")
+            if type(headers) is not int or isinstance(headers, bool) or headers < 0:
+                raise RpcMalformedResponseError("Invalid 'headers' field in delegated output.")
+
+            best_block_hash = data.get("best_block_hash")
+            if not isinstance(best_block_hash, str) or not _HEX_64_REGEX.match(best_block_hash):
+                raise RpcMalformedResponseError(
+                    "Invalid 'best_block_hash' field in delegated output."
+                )
+
+            median_time = data.get("median_time")
+            if type(median_time) is not int or isinstance(median_time, bool) or median_time < 0:
+                raise RpcMalformedResponseError("Invalid 'median_time' field in delegated output.")
+
+            initial_block_download = data.get("initial_block_download")
+            if not isinstance(initial_block_download, bool):
+                raise RpcMalformedResponseError(
+                    "Invalid 'initial_block_download' field in delegated output."
+                )
+
+            pruned = data.get("pruned")
+            if not isinstance(pruned, bool):
+                raise RpcMalformedResponseError("Invalid 'pruned' field in delegated output.")
+
+            raw_chainwork = data.get("chainwork")
+            chainwork: str | None = None
+            if raw_chainwork is not None:
+                if not isinstance(raw_chainwork, str) or not _HEX_64_REGEX.match(raw_chainwork):
+                    raise RpcMalformedResponseError(
+                        "Invalid 'chainwork' field in delegated output."
+                    )
+                chainwork = raw_chainwork
+
+            if version != 310100 or chain != "regtest":
+                raise RpcIncompatibleNodeError(
+                    "Delegated node reported incompatible version or chain."
+                )
+
+            return NodeOverview(
+                version=version,
+                subversion=subversion,
+                network_active=network_active,
+                connections=connections,
+                chain=chain,
+                blocks=blocks,
+                headers=headers,
+                best_block_hash=best_block_hash,
+                median_time=median_time,
+                initial_block_download=initial_block_download,
+                pruned=pruned,
+                chainwork=chainwork,
+            )
+        except subprocess.TimeoutExpired:
+            raise RpcTimeoutError("Docker Compose delegated inspection timed out.") from None
+        except (json.JSONDecodeError, ValueError, KeyError):
+            raise RpcMalformedResponseError(
+                "Failed to parse delegated node inspection response."
+            ) from None
+        except OSError:
+            raise RuntimeUnavailableError("Failed to execute Docker Compose.") from None
+
     # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------
@@ -623,10 +885,10 @@ class ComposeLifecycleAdapter(NodeLifecyclePort):
 
             # Containers exist but bitcoin-core is not among them → UNKNOWN
             return NodeLifecycleState.UNKNOWN
-        except subprocess.TimeoutExpired as err:
-            raise RuntimeUnavailableError("Docker Compose ps timed out") from err
-        except OSError as err:
-            raise RuntimeUnavailableError("Failed to execute Docker Compose ps") from err
+        except subprocess.TimeoutExpired:
+            raise RuntimeUnavailableError("Docker Compose ps timed out") from None
+        except OSError:
+            raise RuntimeUnavailableError("Failed to execute Docker Compose ps") from None
 
     @staticmethod
     def _parse_delegated_health(stdout: str) -> NodeHealth:

@@ -10,7 +10,7 @@
 Phase 3 of 6 — Secure RPC and Read-Only Observation
 
 ## Active Increment
-Define the secure, typed, read-only RPC observation contract for node, blockchain, block, mempool, and peer inspection before implementation.
+Phase 3A: Implement secure synchronous stdlib JSON-RPC observation boundary, NodeOverview domain model, application service, and inspect node CLI subcommand.
 
 ## Active Specifications
 - [`SPEC-0004: Managed Regtest Node Runtime Contract`](specs/SPEC-0004-managed-regtest-node-runtime.md) (Accepted)
@@ -23,10 +23,10 @@ Define the secure, typed, read-only RPC observation contract for node, blockchai
 - [`ADR-0005: Docker Compose Runtime Topology`](adr/ADR-0005-docker-compose-runtime-topology.md) (Accepted)
 
 ## Status
-Architecture and specification planning
+Phase 3A implementation is independently reviewed and ready for integration. Phase 3 remains incomplete.
 
 ## Next Action
-Plan and delegate the bounded Phase 3 implementation governed by accepted `SPEC-0005`.
+Commit Phase 3A, open its pull request, and validate the protected contracts and Compose integration in CI before merge.
 
 ## Blockers
 None.
@@ -58,7 +58,7 @@ None.
 - Implemented and integrated Phase 2 managed node lifecycle and health through PR #10: verified Bitcoin Core 31.1 images for `amd64` and `arm64`, isolated Compose topology, typed lifecycle boundaries, delegated authenticated health probing, secure storage separation, and real CI integration validation.
 
 ## In Progress
-- Phase 3 contract definition and independent review for secure RPC and read-only observation.
+- Phase 3A implementation for secure RPC and read-only observation.
 
 ## Future Hardening (Post-v0.1.0 / Towards v1.0, Non-Blocking)
 - Automated code coverage measurement and thresholds.

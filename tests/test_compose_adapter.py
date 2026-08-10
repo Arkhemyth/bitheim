@@ -9,6 +9,9 @@ import pytest
 
 from bitheim.domain.errors import (
     LifecycleError,
+    RpcIncompatibleNodeError,
+    RpcMalformedResponseError,
+    RpcUnavailableError,
     RuntimeUnavailableError,
 )
 from bitheim.domain.node import NodeLifecycleState
@@ -602,3 +605,188 @@ def test_compose_adapter_deadline_cumulative_budget() -> None:
         patch("subprocess.run", side_effect=mock_sub_run),
     ):
         adapter.start("test-node", timeout=budget)
+
+
+def test_compose_adapter_inspect_node_success() -> None:
+    """Verify delegated inspect_node invokes one-shot bitheim inspect node."""
+    adapter = ComposeLifecycleAdapter()
+    calls: list[list[str]] = []
+
+    def mock_sub_run(cmd: list[str], **kwargs: Any) -> MagicMock:
+        calls.append(cmd)
+        res = MagicMock()
+        res.returncode = 0
+        res.stderr = ""
+        if "info" in cmd:
+            res.stdout = "26.0.0\n"
+        elif "ps" in cmd:
+            res.stdout = json.dumps([{"Service": "bitcoin-core", "State": "running"}])
+        elif "run" in cmd:
+            payload = {
+                "version": 310100,
+                "subversion": "/Satoshi:31.1.0/",
+                "protocol_version": 70016,
+                "network_active": True,
+                "connections": 8,
+                "chain": "regtest",
+                "blocks": 100,
+                "headers": 100,
+                "best_block_hash": (
+                    "0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206"
+                ),
+                "median_time": 1296688602,
+                "initial_block_download": False,
+                "pruned": False,
+                "chainwork": "0000000000000000000000000000000000000000000000000000000000000002",
+            }
+            res.stdout = json.dumps(payload)
+        return res
+
+    with (
+        patch("shutil.which", return_value="/usr/bin/docker"),
+        patch("subprocess.run", side_effect=mock_sub_run),
+    ):
+        overview = adapter.inspect_node("test-node", timeout=10.0)
+
+    assert overview.version == 310100
+    assert overview.chain == "regtest"
+    assert overview.blocks == 100
+
+    run_call = next(c for c in calls if "run" in c)
+    assert "--rm" in run_call
+    assert "--no-deps" in run_call
+    assert "-T" in run_call
+    assert "bitheim" in run_call
+    assert "inspect" in run_call
+    assert "node" in run_call
+    assert "--json" in run_call
+
+
+def test_compose_adapter_inspect_node_stopped_raises_error() -> None:
+    """Verify inspect_node on stopped node raises RpcUnavailableError."""
+    adapter = ComposeLifecycleAdapter()
+
+    def mock_sub_run(cmd: list[str], **kwargs: Any) -> MagicMock:
+        res = MagicMock()
+        res.returncode = 0
+        res.stderr = ""
+        if "info" in cmd:
+            res.stdout = "26.0.0\n"
+        elif "ps" in cmd:
+            res.stdout = ""  # No running containers -> STOPPED
+        return res
+
+    with (
+        patch("shutil.which", return_value="/usr/bin/docker"),
+        patch("subprocess.run", side_effect=mock_sub_run),
+    ):
+        with pytest.raises(RpcUnavailableError) as exc_info:
+            adapter.inspect_node("test-node", timeout=10.0)
+        assert "stopped" in str(exc_info.value)
+
+
+def test_compose_adapter_inspect_node_incompatible_error() -> None:
+    """Verify delegated inspection with incompatible stderr raises RpcIncompatibleNodeError."""
+    adapter = ComposeLifecycleAdapter()
+
+    def mock_sub_run(cmd: list[str], **kwargs: Any) -> MagicMock:
+        res = MagicMock()
+        if "info" in cmd:
+            res.returncode = 0
+            res.stdout = "26.0.0\n"
+        elif "ps" in cmd:
+            res.returncode = 0
+            res.stdout = json.dumps([{"Service": "bitcoin-core", "State": "running"}])
+        elif "run" in cmd:
+            res.returncode = 1
+            res.stderr = (
+                json.dumps(
+                    {
+                        "schema": "bitheim.delegated-error",
+                        "version": 1,
+                        "category": "incompatible",
+                    }
+                )
+                + "\nbitheim: error: Incompatible Bitcoin Core version: "
+                + "got 310000, expected 310100\n"
+            )
+        return res
+
+    with (
+        patch("shutil.which", return_value="/usr/bin/docker"),
+        patch("subprocess.run", side_effect=mock_sub_run),
+        pytest.raises(RpcIncompatibleNodeError),
+    ):
+        adapter.inspect_node("test-node")
+
+
+def test_compose_adapter_inspect_node_adversarial_malformed_type() -> None:
+    """Verify that type coercion is rejected (string for int, bool for int, etc)."""
+    adapter = ComposeLifecycleAdapter()
+
+    def mock_sub_run(cmd: list[str], **kwargs: Any) -> MagicMock:
+        res = MagicMock()
+        res.returncode = 0
+        res.stderr = ""
+        if "info" in cmd:
+            res.stdout = "26.0.0\n"
+        elif "ps" in cmd:
+            res.stdout = json.dumps([{"Service": "bitcoin-core", "State": "running"}])
+        elif "run" in cmd:
+            payload = {
+                "version": "310100",  # String instead of int
+                "subversion": "/Satoshi:31.1.0/",
+                "network_active": True,
+                "connections": 8,
+                "chain": "regtest",
+                "blocks": 100,
+                "headers": 100,
+                "best_block_hash": (
+                    "0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206"
+                ),
+                "median_time": 1296688602,
+                "initial_block_download": False,
+                "pruned": False,
+                "chainwork": "0000000000000000000000000000000000000000000000000000000000000002",
+            }
+            res.stdout = json.dumps(payload)
+        return res
+
+    with (
+        patch("shutil.which", return_value="/usr/bin/docker"),
+        patch("subprocess.run", side_effect=mock_sub_run),
+        pytest.raises(RpcMalformedResponseError),
+    ):
+        adapter.inspect_node("test-node")
+
+
+def test_compose_adapter_inspect_node_adversarial_duplicate_keys() -> None:
+    """Verify duplicate JSON keys in delegated output are rejected."""
+    adapter = ComposeLifecycleAdapter()
+
+    def mock_sub_run(cmd: list[str], **kwargs: Any) -> MagicMock:
+        res = MagicMock()
+        res.returncode = 0
+        res.stderr = ""
+        if "info" in cmd:
+            res.stdout = "26.0.0\n"
+        elif "ps" in cmd:
+            res.stdout = json.dumps([{"Service": "bitcoin-core", "State": "running"}])
+        elif "run" in cmd:
+            res.stdout = (
+                '{"version": 310100, "version": 310100, "subversion": "/Satoshi:31.1.0/", '
+                '"network_active": true, "connections": 8, "chain": "regtest", "blocks": 100, '
+                '"headers": 100, '
+                '"best_block_hash": '
+                '"0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206", '
+                '"median_time": 1296688602, "initial_block_download": false, "pruned": false, '
+                '"chainwork": "0000000000000000000000000000000000000000000000000000000000000002"}'
+            )
+        return res
+
+    with (
+        patch("shutil.which", return_value="/usr/bin/docker"),
+        patch("subprocess.run", side_effect=mock_sub_run),
+        pytest.raises(RpcMalformedResponseError),
+    ):
+        adapter.inspect_node("test-node")

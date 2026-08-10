@@ -4,14 +4,20 @@ import math
 import re
 import time
 
-from bitheim.application.ports import NodeLifecyclePort
+from bitheim.application.ports import NodeLifecyclePort, NodeObservationPort
 from bitheim.bootstrap.logging import get_logger
 from bitheim.domain.errors import (
     LifecycleError,
     NodeIncompatibleError,
+    RpcError,
     StartupTimeoutError,
 )
-from bitheim.domain.node import NodeHealth, NodeLifecycleState, NodeStatus
+from bitheim.domain.node import (
+    NodeHealth,
+    NodeLifecycleState,
+    NodeOverview,
+    NodeStatus,
+)
 
 logger = get_logger("application.service")
 
@@ -189,3 +195,68 @@ class NodeLifecycleService:
         """
         valid_node_id = _validate_service_node_id(node_id)
         return self._adapter.get_status(valid_node_id)
+
+
+class NodeObservationService:
+    """Application service for read-only node observation operations."""
+
+    def __init__(self, observation_port: NodeObservationPort) -> None:
+        self._port = observation_port
+
+    def inspect_node(self, timeout: float = 10.0) -> NodeOverview:
+        """Retrieve typed node and chain overview facts.
+
+        Args:
+            timeout: Command deadline in seconds (must be positive and <= 60.0).
+
+        Returns:
+            NodeOverview snapshot verified on Bitcoin Core 31.1 regtest.
+
+        Raises:
+            RpcError: If timeout validation or observation operation fails.
+        """
+        if not isinstance(timeout, (int, float)) or isinstance(timeout, bool):
+            raise RpcError("Parameter 'timeout' must be a numeric value.")
+        valid_timeout = float(timeout)
+        if (
+            valid_timeout <= 0
+            or math.isnan(valid_timeout)
+            or math.isinf(valid_timeout)
+            or valid_timeout > 60.0
+        ):
+            raise RpcError("Command deadline must be a positive finite value no greater than 60s.")
+
+        logger.debug(
+            "Inspecting node overview",
+            extra={
+                "event": "node_inspect_requested",
+                "data": {"operation": "node_overview"},
+            },
+        )
+        try:
+            overview = self._port.get_node_overview(timeout=valid_timeout)
+        except Exception as err:
+            logger.error(
+                "Node overview inspection failed",
+                extra={
+                    "event": "node_overview_failed",
+                    "data": {
+                        "operation": "node_overview",
+                        "outcome": "failure",
+                        "error_type": type(err).__name__,
+                    },
+                },
+            )
+            raise
+
+        logger.info(
+            "Node overview successfully retrieved",
+            extra={
+                "event": "node_overview_inspected",
+                "data": {
+                    "operation": "node_overview",
+                    "outcome": "success",
+                },
+            },
+        )
+        return overview

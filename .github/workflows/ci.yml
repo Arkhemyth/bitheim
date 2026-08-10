@@ -156,9 +156,18 @@ jobs:
           CHAIN=$(echo "${HEALTH_JSON}" | jq -r '.health.chain')
           VERSION=$(echo "${HEALTH_JSON}" | jq -r '.health.version')
           STATE=$(echo "${HEALTH_JSON}" | jq -r '.health.state')
+          test "${STATE}" = "healthy"
+
+      - name: Integration test — delegated inspect node through bitheim boundary
+        env:
+          BITHEIM_BITCOIN_CORE_IMAGE: bitheim-bitcoin-core:ci
+          BITHEIM_IMAGE: bitheim:ci
+        run: |
+          INSPECT_JSON=$(docker compose -f docker/compose.yml --project-name ci-integration run --rm --no-deps -T bitheim inspect node --json)
+          CHAIN=$(echo "${INSPECT_JSON}" | jq -r '.chain')
+          VERSION=$(echo "${INSPECT_JSON}" | jq -r '.version')
           test "${CHAIN}" = "regtest"
           test "${VERSION}" = "310100"
-          test "${STATE}" = "healthy"
 
       - name: Integration test — verify cookie volume is read-only in bitheim
         env:
@@ -200,6 +209,20 @@ jobs:
           BITHEIM_IMAGE: bitheim:ci
         run: |
           docker compose -f docker/compose.yml --project-name ci-integration stop -t 10
+
+      - name: Integration test — inspect-stopped must not start bitcoin-core
+        env:
+          BITHEIM_BITCOIN_CORE_IMAGE: bitheim-bitcoin-core:ci
+          BITHEIM_IMAGE: bitheim:ci
+        run: |
+          if INSPECT_ERR=$(docker compose -f docker/compose.yml --project-name ci-integration run --rm --no-deps -T bitheim inspect node --json 2>&1); then
+            echo "Security violation: inspect node succeeded on stopped node"
+            exit 1
+          fi
+          CATEGORY=$(echo "${INSPECT_ERR}" | grep 'bitheim.delegated-error' | jq -r '.category' || true)
+          test "${CATEGORY}" = "unavailable"
+          POST_INSPECT_STATE=$(docker compose -f docker/compose.yml --project-name ci-integration ps --format json | jq -r '.[].State' || true)
+          test -z "${POST_INSPECT_STATE}"
 
       - name: Integration test — verify volume retention after stop
         run: |
