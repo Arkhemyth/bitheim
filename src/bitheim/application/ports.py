@@ -2,7 +2,12 @@
 
 from typing import Protocol
 
-from bitheim.domain.node import NodeHealth, NodeLifecycleState, NodeStatus
+from bitheim.domain.node import (
+    NodeHealth,
+    NodeLifecycleState,
+    NodeOverview,
+    NodeStatus,
+)
 
 
 class NodeLifecyclePort(Protocol):
@@ -66,5 +71,24 @@ class NodeLifecyclePort(Protocol):
 
         Returns:
             NodeStatus snapshot containing state and health.
+        """
+        ...
+
+
+class NodeObservationPort(Protocol):
+    """Port defining read-only observation operations against Bitcoin Core."""
+
+    def get_node_overview(self, timeout: float = 10.0) -> NodeOverview:
+        """Retrieve validated node and blockchain overview facts.
+
+        Args:
+            timeout: Maximum command deadline in seconds (must be positive and <= 60.0).
+
+        Returns:
+            NodeOverview snapshot verified on Bitcoin Core 31.1 regtest.
+
+        Raises:
+            RpcError: On transport, authentication, protocol, incompatibility,
+                or validation failure.
         """
         ...

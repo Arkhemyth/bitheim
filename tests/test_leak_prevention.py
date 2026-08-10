@@ -94,3 +94,46 @@ def test_configuration_loading_path_leak_prevention(tmp_path: Path) -> None:
 
     log_output = stream.getvalue()
     assert "sensitive_personal_dir_xyz_123" not in log_output
+
+
+def test_rpc_cookie_and_auth_leak_prevention(tmp_path: Path) -> None:
+    """Verify RPC errors do not leak cookie file contents or raw credentials in exceptions/logs."""
+    import urllib.error
+
+    from bitheim.domain.errors import RpcAuthenticationError
+    from bitheim.infrastructure.bitcoin.rpc_client import BitcoinRpcClient
+
+    stream = io.StringIO()
+    setup_logging(level=logging.DEBUG, stream=stream, force=True)
+
+    secret_cookie_val = "__cookie__:super_secret_cookie_token_999888"
+    cookie_file = tmp_path / "secret_personal_vault" / ".cookie"
+    cookie_file.parent.mkdir()
+    cookie_file.write_text(secret_cookie_val, encoding="utf-8")
+
+    client = BitcoinRpcClient()
+    client._cookie_path = cookie_file
+
+    err = urllib.error.HTTPError(
+        url="http://127.0.0.1:18443/",
+        code=401,
+        msg="Unauthorized",
+        hdrs={},  # type: ignore[arg-type]
+        fp=None,
+    )
+
+    mock_opener = MagicMock()
+    mock_opener.open.side_effect = err
+    client._opener = mock_opener
+
+    with pytest.raises(RpcAuthenticationError) as exc_info:
+        client.get_node_overview()
+
+    exc_msg = str(exc_info.value)
+    log_output = stream.getvalue()
+
+    # Neither exception message nor logs must contain cookie secret or sensitive path
+    assert "super_secret_cookie_token_999888" not in exc_msg
+    assert "super_secret_cookie_token_999888" not in log_output
+    assert "secret_personal_vault" not in exc_msg
+    assert "secret_personal_vault" not in log_output

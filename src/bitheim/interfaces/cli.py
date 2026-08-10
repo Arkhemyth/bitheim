@@ -10,7 +10,10 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from bitheim import __version__
-from bitheim.application.service import NodeLifecycleService
+from bitheim.application.service import (
+    NodeLifecycleService,
+    NodeObservationService,
+)
 from bitheim.bootstrap.configuration import (
     ConfigurationError,
     load_configuration,
@@ -19,8 +22,19 @@ from bitheim.bootstrap.logging import get_logger, setup_logging
 from bitheim.domain.errors import (
     BitheimError,
     LifecycleError,
+    RpcAuthenticationError,
+    RpcIncompatibleNodeError,
+    RpcMalformedResponseError,
+    RpcProtocolError,
+    RpcResponseSizeExceededError,
+    RpcTimeoutError,
+    RpcUnavailableError,
 )
-from bitheim.domain.node import NodeStatus
+from bitheim.domain.node import (
+    NodeLifecycleState,
+    NodeStatus,
+)
+from bitheim.infrastructure.bitcoin.rpc_client import BitcoinRpcClient
 from bitheim.infrastructure.bitcoin.rpc_probe import probe_rpc_http
 from bitheim.infrastructure.compose.adapter import ComposeLifecycleAdapter
 
@@ -294,6 +308,86 @@ def handle_doctor(args: argparse.Namespace) -> int:
             )
             all_passed = False
 
+    # Check 6: Node RPC observation (SPEC-0005 §10)
+    if _is_container_execution_context():
+        try:
+            client = BitcoinRpcClient(
+                rpc_host="bitcoin-core",
+                rpc_port=18443,
+                cookie_path=Path("/data/rpc/.cookie"),
+            )
+            service = NodeObservationService(client)
+            service.inspect_node(timeout=3.0)
+            sys.stdout.write("[✓] Node RPC: authenticated read-only observation verified\n")
+            logger.debug("Container RPC check passed", extra={"event": "doctor_rpc_check_passed"})
+        except RpcAuthenticationError:
+            sys.stderr.write("[✗] Node RPC: authentication rejected or cookie invalid\n")
+            all_passed = False
+        except RpcIncompatibleNodeError:
+            sys.stderr.write("[✗] Node RPC: incompatible chain or version\n")
+            all_passed = False
+        except (RpcMalformedResponseError, RpcProtocolError, RpcResponseSizeExceededError):
+            sys.stderr.write("[✗] Node RPC: malformed protocol response\n")
+            all_passed = False
+        except (RpcUnavailableError, RpcTimeoutError):
+            sys.stderr.write("[✗] Node RPC: RPC transport unavailable\n")
+            all_passed = False
+        except Exception:
+            sys.stderr.write("[✗] Node RPC: observation failed\n")
+            all_passed = False
+    elif all_passed:
+        # On host: check if managed node is currently running
+        try:
+            bitheim_image = os.environ.get("BITHEIM_IMAGE", "bitheim:local")
+            adapter = ComposeLifecycleAdapter(
+                compose_subnet=config.node.compose_subnet,
+                bitheim_image=bitheim_image,
+            )
+            state = adapter.get_lifecycle_state(config.node.node_id)
+            if state == NodeLifecycleState.STOPPED:
+                sys.stdout.write("[✓] Node RPC: managed node is stopped (skipped)\n")
+                logger.debug(
+                    "Node RPC check skipped (node explicitly stopped)",
+                    extra={"event": "doctor_rpc_check_skipped"},
+                )
+            elif state == NodeLifecycleState.UNKNOWN:
+                sys.stderr.write("[✗] Node RPC: managed node state is unknown\n")
+                all_passed = False
+            elif state in (NodeLifecycleState.STARTING, NodeLifecycleState.HEALTHY):
+                try:
+                    adapter.inspect_node(config.node.node_id, timeout=3.0)
+                    sys.stdout.write("[✓] Node RPC: authenticated read-only observation verified\n")
+                    logger.debug(
+                        "Node RPC check passed", extra={"event": "doctor_rpc_check_passed"}
+                    )
+                except RpcAuthenticationError:
+                    sys.stderr.write("[✗] Node RPC: authentication rejected\n")
+                    all_passed = False
+                except RpcIncompatibleNodeError:
+                    sys.stderr.write("[✗] Node RPC: incompatible chain or version\n")
+                    all_passed = False
+                except (RpcMalformedResponseError, RpcProtocolError, RpcResponseSizeExceededError):
+                    sys.stderr.write("[✗] Node RPC: malformed protocol response\n")
+                    all_passed = False
+                except (RpcUnavailableError, RpcTimeoutError):
+                    sys.stderr.write("[✗] Node RPC: RPC transport unavailable\n")
+                    all_passed = False
+                except Exception:
+                    sys.stderr.write("[✗] Node RPC: observation failed\n")
+                    all_passed = False
+            else:
+                sys.stderr.write(
+                    f"[✗] Node RPC: managed node is in unexpected state '{state.value}'\n"
+                )
+                all_passed = False
+        except Exception:
+            sys.stderr.write("[✗] Node RPC: failed to determine node state\n")
+            logger.error(
+                "Node RPC check failed on exception",
+                extra={"event": "doctor_rpc_check_failed"},
+            )
+            all_passed = False
+
     logger.debug(
         "Doctor diagnostics completed",
         extra={"event": "doctor_completed", "data": {"passed": all_passed}},
@@ -408,6 +502,54 @@ def handle_status(args: argparse.Namespace) -> int:
     return 0
 
 
+def handle_inspect_node(args: argparse.Namespace) -> int:
+    """Execute 'bitheim inspect node' command to retrieve typed node and blockchain overview."""
+    config = load_configuration(
+        config_path=args.config,
+        data_dir=args.data_dir,
+        node_id=args.node_id,
+    )
+    timeout = args.timeout if args.timeout is not None else 10.0
+
+    if _is_container_execution_context():
+        client = BitcoinRpcClient(
+            rpc_host="bitcoin-core",
+            rpc_port=18443,
+            cookie_path=Path("/data/rpc/.cookie"),
+        )
+        service = NodeObservationService(client)
+        overview = service.inspect_node(timeout=timeout)
+    else:
+        bitheim_image = os.environ.get("BITHEIM_IMAGE", "bitheim:local")
+        adapter = ComposeLifecycleAdapter(
+            compose_subnet=config.node.compose_subnet,
+            bitheim_image=bitheim_image,
+        )
+        overview = adapter.inspect_node(node_id=config.node.node_id, timeout=timeout)
+
+    if getattr(args, "json", False):
+        sys.stdout.write(json.dumps(overview.to_dict(), indent=2, sort_keys=True) + "\n")
+    else:
+        sys.stdout.write(f"Chain:                  {overview.chain}\n")
+        sys.stdout.write(f"Version:                {overview.version} ({overview.subversion})\n")
+        sys.stdout.write(
+            f"Network Active:         {'true' if overview.network_active else 'false'}\n"
+        )
+        sys.stdout.write(f"Connections:            {overview.connections}\n")
+        sys.stdout.write(f"Blocks:                 {overview.blocks}\n")
+        sys.stdout.write(f"Headers:                {overview.headers}\n")
+        sys.stdout.write(f"Best Block Hash:        {overview.best_block_hash}\n")
+        sys.stdout.write(f"Median Time:            {overview.median_time}\n")
+        sys.stdout.write(
+            f"Initial Block Download: {'true' if overview.initial_block_download else 'false'}\n"
+        )
+        sys.stdout.write(f"Pruned:                 {'true' if overview.pruned else 'false'}\n")
+        if overview.chainwork is not None:
+            sys.stdout.write(f"Chainwork:              {overview.chainwork}\n")
+
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Construct and configure the root command-line argument parser.
 
@@ -511,7 +653,56 @@ def build_parser() -> argparse.ArgumentParser:
     )
     status_parser.set_defaults(handler=handle_status)
 
+    inspect_parser = subparsers.add_parser(
+        "inspect",
+        parents=[common_parser],
+        help="Inspect Bitcoin Core node and blockchain state.",
+        description="Inspect Bitcoin Core node and blockchain state.",
+    )
+    inspect_subparsers = inspect_parser.add_subparsers(dest="inspect_subcommand", required=True)
+
+    inspect_node_parser = inspect_subparsers.add_parser(
+        "node",
+        parents=[common_parser],
+        help="Inspect node overview and chain facts.",
+        description="Inspect node overview and chain facts.",
+    )
+    inspect_node_parser.add_argument(
+        "--node-id",
+        type=str,
+        default=None,
+        help="Target node and project identifier.",
+    )
+    inspect_node_parser.add_argument(
+        "--timeout",
+        type=float,
+        default=None,
+        help="Command deadline in seconds (max 60s).",
+    )
+    inspect_node_parser.add_argument(
+        "--json",
+        action="store_true",
+        default=False,
+        help="Format output as JSON.",
+    )
+    inspect_node_parser.set_defaults(handler=handle_inspect_node)
+
     return parser
+
+
+def _map_error_category(err: Exception) -> str:
+    name = type(err).__name__
+    mapping = {
+        "RpcAuthenticationError": "authentication",
+        "RpcIncompatibleNodeError": "incompatible",
+        "RpcTimeoutError": "timeout",
+        "RpcUnavailableError": "unavailable",
+        "RpcMalformedResponseError": "malformed_response",
+        "RpcProtocolError": "malformed_response",
+        "RpcResponseSizeExceededError": "malformed_response",
+        "ConfigurationError": "configuration",
+    }
+    return mapping.get(name, "unexpected")
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -524,7 +715,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     Returns:
         Integer exit code (0 for success, non-zero on diagnostic or configuration failure).
     """
-    setup_logging()
+    if _is_container_execution_context():
+        import logging
+
+        setup_logging(level=logging.CRITICAL + 1)
+    else:
+        setup_logging()
     parser = build_parser()
     args = parser.parse_args(argv)
     if hasattr(args, "handler") and args.handler is not None:
@@ -538,6 +734,17 @@ def main(argv: Sequence[str] | None = None) -> int:
                     "data": {"error_type": type(err).__name__},
                 },
             )
+            if _is_container_execution_context():
+                sys.stderr.write(
+                    json.dumps(
+                        {
+                            "schema": "bitheim.delegated-error",
+                            "version": 1,
+                            "category": _map_error_category(err),
+                        }
+                    )
+                    + "\n"
+                )
             sys.stderr.write(f"bitheim: error: {err}\n")
             return 1
         except Exception as err:
@@ -548,6 +755,17 @@ def main(argv: Sequence[str] | None = None) -> int:
                     "data": {"error_type": type(err).__name__},
                 },
             )
+            if _is_container_execution_context():
+                sys.stderr.write(
+                    json.dumps(
+                        {
+                            "schema": "bitheim.delegated-error",
+                            "version": 1,
+                            "category": _map_error_category(err),
+                        }
+                    )
+                    + "\n"
+                )
             sys.stderr.write("bitheim: error: An unexpected error occurred.\n")
             return 1
     return 0

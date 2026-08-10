@@ -53,3 +53,91 @@ class NodeStatus:
     state: NodeLifecycleState
     health: NodeHealth = field(default_factory=lambda: NodeHealth(state=NodeLifecycleState.UNKNOWN))
     details: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class NodeOverview:
+    """Typed, immutable observation snapshot of Bitcoin Core node and blockchain state.
+
+    SPEC-0005 §8.1: Validated domain facts without transport details or raw payloads.
+    """
+
+    version: int
+    subversion: str
+    network_active: bool
+    connections: int
+    chain: str
+    blocks: int
+    headers: int
+    best_block_hash: str
+    median_time: int
+    initial_block_download: bool
+    pruned: bool
+    chainwork: str | None = None
+
+    def __post_init__(self) -> None:
+        """Validate domain invariants per SPEC-0005 §8.1."""
+        if type(self.version) is not int or self.version != 310100:
+            raise ValueError(f"Incompatible or invalid node version: {self.version}")
+
+        if (
+            not isinstance(self.subversion, str)
+            or not (0 < len(self.subversion.encode("utf-8")) <= 512)
+            or not all(" " <= c <= "~" for c in self.subversion)
+        ):
+            raise ValueError("Subversion must be a non-empty printable ASCII string <= 512 bytes")
+
+        if not isinstance(self.network_active, bool):
+            raise ValueError("network_active must be a boolean")
+
+        if type(self.connections) is not int or self.connections < 0:
+            raise ValueError("connections must be a non-negative integer")
+
+        if not isinstance(self.chain, str) or self.chain != "regtest":
+            raise ValueError(f"Incompatible chain: {self.chain}")
+
+        if type(self.blocks) is not int or self.blocks < 0:
+            raise ValueError("blocks must be a non-negative integer")
+
+        if type(self.headers) is not int or self.headers < 0:
+            raise ValueError("headers must be a non-negative integer")
+
+        if (
+            not isinstance(self.best_block_hash, str)
+            or len(self.best_block_hash) != 64
+            or not all(c in "0123456789abcdef" for c in self.best_block_hash)
+        ):
+            raise ValueError("best_block_hash must be a 64-character lowercase hex string")
+
+        if type(self.median_time) is not int or self.median_time < 0:
+            raise ValueError("median_time must be a non-negative integer")
+
+        if not isinstance(self.initial_block_download, bool):
+            raise ValueError("initial_block_download must be a boolean")
+
+        if not isinstance(self.pruned, bool):
+            raise ValueError("pruned must be a boolean")
+
+        if self.chainwork is not None and (
+            not isinstance(self.chainwork, str)
+            or len(self.chainwork) != 64
+            or not all(c in "0123456789abcdef" for c in self.chainwork)
+        ):
+            raise ValueError("chainwork must be None or a 64-character lowercase hex string")
+
+    def to_dict(self) -> dict[str, object]:
+        """Return deterministic dictionary representation for JSON serialization."""
+        return {
+            "best_block_hash": self.best_block_hash,
+            "blocks": self.blocks,
+            "chain": self.chain,
+            "chainwork": self.chainwork,
+            "connections": self.connections,
+            "headers": self.headers,
+            "initial_block_download": self.initial_block_download,
+            "median_time": self.median_time,
+            "network_active": self.network_active,
+            "pruned": self.pruned,
+            "subversion": self.subversion,
+            "version": self.version,
+        }

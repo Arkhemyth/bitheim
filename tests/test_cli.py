@@ -73,7 +73,12 @@ def test_cli_doctor_help(capsys: pytest.CaptureFixture[str]) -> None:
 def test_cli_doctor_success(capsys: pytest.CaptureFixture[str], tmp_path: Path) -> None:
     """Verify that 'bitheim doctor' executes all diagnostic checks successfully and exits 0."""
     data_dir = tmp_path / "valid_data"
-    with patch("shutil.which", return_value="/usr/bin/docker"), patch("subprocess.run") as mock_sub:
+    with (
+        patch("shutil.which", return_value="/usr/bin/docker"),
+        patch("subprocess.run") as mock_sub,
+        patch("bitheim.interfaces.cli.ComposeLifecycleAdapter.get_lifecycle_state") as mock_state,
+    ):
+        mock_state.return_value = NodeLifecycleState.STOPPED
         mock_sub.return_value = MagicMock(returncode=0, stdout="26.0.0\n")
         exit_code = main(["doctor", "--data-dir", str(data_dir)])
     assert exit_code == 0
@@ -91,7 +96,12 @@ def test_cli_doctor_existing_directory_success(
     """Verify that 'bitheim doctor' succeeds when data_dir already exists and is writable."""
     data_dir = tmp_path / "existing_data"
     data_dir.mkdir()
-    with patch("shutil.which", return_value="/usr/bin/docker"), patch("subprocess.run") as mock_sub:
+    with (
+        patch("shutil.which", return_value="/usr/bin/docker"),
+        patch("subprocess.run") as mock_sub,
+        patch("bitheim.interfaces.cli.ComposeLifecycleAdapter.get_lifecycle_state") as mock_state,
+    ):
+        mock_state.return_value = NodeLifecycleState.STOPPED
         mock_sub.return_value = MagicMock(returncode=0, stdout="26.0.0\n")
         exit_code = main(["doctor", "--data-dir", str(data_dir)])
     assert exit_code == 0
