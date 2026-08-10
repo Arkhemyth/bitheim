@@ -89,8 +89,15 @@ jobs:
       - name: Smoke test Bitheim CLI version flag
         run: docker run --rm bitheim:ci --version
 
-      - name: Smoke test Bitheim CLI doctor diagnostics
-        run: docker run --rm bitheim:ci doctor
+      - name: Smoke test Bitheim CLI doctor fails closed without RPC credentials
+        run: |
+          set +e
+          DOCTOR_OUTPUT=$(docker run --rm bitheim:ci doctor 2>&1)
+          DOCTOR_STATUS=$?
+          set -e
+          echo "${DOCTOR_OUTPUT}"
+          test "${DOCTOR_STATUS}" = "1"
+          echo "${DOCTOR_OUTPUT}" | grep -q "Node RPC: authentication rejected or cookie invalid"
 
       - name: Smoke test Bitcoin Core daemon version
         run: |
@@ -157,6 +164,12 @@ jobs:
           VERSION=$(echo "${HEALTH_JSON}" | jq -r '.health.version')
           STATE=$(echo "${HEALTH_JSON}" | jq -r '.health.state')
           test "${STATE}" = "healthy"
+
+      - name: Integration test — doctor validates managed node RPC
+        env:
+          BITHEIM_BITCOIN_CORE_IMAGE: bitheim-bitcoin-core:ci
+          BITHEIM_IMAGE: bitheim:ci
+        run: docker compose -f docker/compose.yml --project-name ci-integration run --rm --no-deps -T bitheim doctor
 
       - name: Integration test — delegated inspect node through bitheim boundary
         env:
