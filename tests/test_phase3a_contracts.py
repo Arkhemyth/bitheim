@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import ast
 import json
-import subprocess
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -411,25 +410,70 @@ def test_project_status_keeps_phase_number_and_names_active_subincrement() -> No
 
 def test_historical_test_inventory_is_not_reduced() -> None:
     protected = {
-        "tests/test_cli.py",
-        "tests/test_compose_adapter.py",
-        "tests/test_leak_prevention.py",
-        "tests/test_logging.py",
+        "tests/test_cli.py": {
+            "test_build_parser_configuration",
+            "test_cli_help_flag",
+            "test_cli_version_flag",
+            "test_cli_unknown_argument",
+            "test_cli_default_invocation_returns_zero",
+            "test_cli_doctor_help",
+            "test_cli_doctor_success",
+            "test_cli_doctor_existing_directory_success",
+            "test_cli_doctor_data_dir_is_not_directory",
+            "test_cli_doctor_invalid_configuration_file",
+            "test_cli_module_execution",
+            "test_cli_installed_entrypoint",
+            "test_cli_container_context_lifecycle_protection",
+            "test_cli_start_command_flow",
+            "test_cli_stop_command_flow",
+            "test_cli_status_json_flow",
+        },
+        "tests/test_compose_adapter.py": {
+            "test_compose_adapter_docker_unavailable",
+            "test_compose_adapter_docker_daemon_down",
+            "test_compose_adapter_start_success",
+            "test_compose_adapter_start_ensures_both_images",
+            "test_compose_adapter_stop_success",
+            "test_compose_adapter_stop_subprocess_timeout_within_budget",
+            "test_compose_adapter_probe_health_healthy",
+            "test_compose_adapter_probe_health_incompatible_version",
+            "test_compose_adapter_probe_delegates_through_bitheim_service",
+            "test_compose_adapter_get_lifecycle_state_unknown_for_unexpected_state",
+            "test_compose_adapter_get_lifecycle_state_unknown_when_bitcoin_core_absent",
+            "test_compose_adapter_subnet_collision_inspect_failure_fails_closed",
+            "test_compose_adapter_subnet_collision_malformed_subnet_fails_closed",
+            "test_compose_adapter_get_status_preserves_unknown",
+            "test_compose_adapter_image_inspect_daemon_failure_fails_closed",
+            "test_compose_adapter_probe_health_forged_healthy_wrong_chain_rejected",
+            "test_compose_adapter_probe_health_forged_healthy_wrong_version_rejected",
+            "test_compose_adapter_probe_health_forged_healthy_missing_chain_rejected",
+            "test_compose_adapter_probe_health_does_not_raise_startup_timeout",
+            "test_compose_adapter_deadline_cumulative_budget",
+        },
+        "tests/test_leak_prevention.py": {
+            "test_collision_inspection_error_leak_prevention",
+            "test_compose_ps_failure_leak_prevention",
+            "test_configuration_loading_path_leak_prevention",
+        },
+        "tests/test_logging.py": {
+            "test_structured_formatter_required_fields",
+            "test_structured_formatter_fallback_event_does_not_leak_message",
+            "test_structured_formatter_optional_context_fields",
+            "test_structured_formatter_exception_serialization_type_only",
+            "test_structured_formatter_defense_in_depth_sanitization",
+            "test_sanitize_data_primitive_and_edge_types",
+            "test_parse_log_level",
+            "test_setup_logging_from_environ",
+            "test_setup_logging_stream_and_hierarchy",
+            "test_configuration_loading_structured_logging",
+            "test_handle_doctor_structured_logging",
+            "test_handle_doctor_failure_modes_logging",
+            "test_handle_doctor_incompatible_python_logging",
+            "test_cli_main_configuration_error_logging",
+        },
     }
-    for path in protected:
-        baseline = subprocess.run(
-            ["git", "show", f"main:{path}"],
-            capture_output=True,
-            text=True,
-            check=True,
-        ).stdout
+    for path, baseline_tests in protected.items():
         current = Path(path).read_text(encoding="utf-8")
-        baseline_tests = {
-            node.name
-            for node in ast.walk(ast.parse(baseline))
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-            and node.name.startswith("test_")
-        }
         current_tests = {
             node.name
             for node in ast.walk(ast.parse(current))
