@@ -1,6 +1,7 @@
 """Domain models and lifecycle states for managed Bitcoin Core nodes."""
 
 import enum
+import re
 from dataclasses import dataclass, field
 
 
@@ -140,4 +141,71 @@ class NodeOverview:
             "pruned": self.pruned,
             "subversion": self.subversion,
             "version": self.version,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class BlockSummary:
+    """Immutable, slotted summary of a single Bitcoin block."""
+
+    hash: str
+    height: int
+    confirmations: int
+    timestamp: int
+    transaction_count: int
+    size: int
+    weight: int
+    previous_block_hash: str | None
+    next_block_hash: str | None
+
+    def __post_init__(self) -> None:
+        _hex_re = re.compile(r"^[0-9a-f]{64}$")
+        if not isinstance(self.hash, str) or not _hex_re.match(self.hash):
+            raise ValueError("Block hash must be a 64-character lowercase hex string.")
+        if not isinstance(self.height, int) or isinstance(self.height, bool) or self.height < 0:
+            raise ValueError("Height must be a non-negative integer.")
+        if (
+            not isinstance(self.confirmations, int)
+            or isinstance(self.confirmations, bool)
+            or self.confirmations < 0
+        ):
+            raise ValueError("Confirmations must be a non-negative integer.")
+        if (
+            not isinstance(self.timestamp, int)
+            or isinstance(self.timestamp, bool)
+            or self.timestamp < 0
+        ):
+            raise ValueError("Timestamp must be a non-negative integer.")
+        if (
+            not isinstance(self.transaction_count, int)
+            or isinstance(self.transaction_count, bool)
+            or self.transaction_count < 0
+        ):
+            raise ValueError("Transaction count must be a non-negative integer.")
+        if not isinstance(self.size, int) or isinstance(self.size, bool) or self.size < 0:
+            raise ValueError("Size must be a non-negative integer.")
+        if not isinstance(self.weight, int) or isinstance(self.weight, bool) or self.weight < 0:
+            raise ValueError("Weight must be a non-negative integer.")
+        if self.previous_block_hash is not None and (
+            not isinstance(self.previous_block_hash, str)
+            or not _hex_re.match(self.previous_block_hash)
+        ):
+            raise ValueError("Previous block hash must be a 64-character string or None.")
+        if self.next_block_hash is not None and (
+            not isinstance(self.next_block_hash, str) or not _hex_re.match(self.next_block_hash)
+        ):
+            raise ValueError("Next block hash must be a 64-character string or None.")
+
+    def to_dict(self) -> dict[str, object]:
+        """Return deterministic dictionary representation for JSON serialization."""
+        return {
+            "confirmations": self.confirmations,
+            "hash": self.hash,
+            "height": self.height,
+            "next_block_hash": self.next_block_hash,
+            "previous_block_hash": self.previous_block_hash,
+            "size": self.size,
+            "timestamp": self.timestamp,
+            "transaction_count": self.transaction_count,
+            "weight": self.weight,
         }

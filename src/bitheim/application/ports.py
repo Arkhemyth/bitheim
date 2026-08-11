@@ -3,6 +3,7 @@
 from typing import Protocol
 
 from bitheim.domain.node import (
+    BlockSummary,
     NodeHealth,
     NodeLifecycleState,
     NodeOverview,
@@ -90,5 +91,28 @@ class NodeObservationPort(Protocol):
         Raises:
             RpcError: On transport, authentication, protocol, incompatibility,
                 or validation failure.
+        """
+        ...
+
+    def get_block(
+        self,
+        *,
+        block_hash: str | None = None,
+        height: int | None = None,
+        timeout: float = 10.0,
+    ) -> BlockSummary:
+        """Retrieve a validated block summary by hash or height.
+
+        Args:
+            block_hash: Exactly 64-character block hash (mutually exclusive with height).
+            height: Non-negative block height (mutually exclusive with block_hash).
+            timeout: Maximum command deadline in seconds (must be positive and <= 60.0).
+
+        Returns:
+            BlockSummary immutable snapshot.
+
+        Raises:
+            RpcError: On lookup or validation failure.
+            RpcResourceNotFoundError: If the block is not found.
         """
         ...

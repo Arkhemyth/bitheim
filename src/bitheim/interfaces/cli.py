@@ -550,6 +550,54 @@ def handle_inspect_node(args: argparse.Namespace) -> int:
     return 0
 
 
+def handle_inspect_block(args: argparse.Namespace) -> int:
+    """Execute 'bitheim inspect block' command."""
+    config = load_configuration(
+        config_path=args.config,
+        data_dir=args.data_dir,
+        node_id=args.node_id,
+    )
+    timeout = args.timeout if args.timeout is not None else 10.0
+
+    if _is_container_execution_context():
+        client = BitcoinRpcClient(
+            rpc_host="bitcoin-core",
+            rpc_port=18443,
+            cookie_path=Path("/data/rpc/.cookie"),
+        )
+        service = NodeObservationService(client)
+        summary = service.inspect_block(
+            block_hash=args.block_hash, height=args.height, timeout=timeout
+        )
+    else:
+        bitheim_image = os.environ.get("BITHEIM_IMAGE", "bitheim:local")
+        adapter = ComposeLifecycleAdapter(
+            compose_subnet=config.node.compose_subnet,
+            bitheim_image=bitheim_image,
+        )
+        summary = adapter.inspect_block(
+            node_id=config.node.node_id,
+            block_hash=args.block_hash,
+            height=args.height,
+            timeout=timeout,
+        )
+
+    if getattr(args, "json", False):
+        sys.stdout.write(json.dumps(summary.to_dict(), indent=2, sort_keys=True) + "\n")
+    else:
+        sys.stdout.write(f"Hash:                   {summary.hash}\n")
+        sys.stdout.write(f"Height:                 {summary.height}\n")
+        sys.stdout.write(f"Confirmations:          {summary.confirmations}\n")
+        sys.stdout.write(f"Timestamp:              {summary.timestamp}\n")
+        sys.stdout.write(f"Transactions:           {summary.transaction_count}\n")
+        sys.stdout.write(f"Size (bytes):           {summary.size}\n")
+        sys.stdout.write(f"Weight (wu):            {summary.weight}\n")
+        sys.stdout.write(f"Previous Block Hash:    {summary.previous_block_hash}\n")
+        sys.stdout.write(f"Next Block Hash:        {summary.next_block_hash}\n")
+
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Construct and configure the root command-line argument parser.
 
@@ -687,6 +735,44 @@ def build_parser() -> argparse.ArgumentParser:
     )
     inspect_node_parser.set_defaults(handler=handle_inspect_node)
 
+    inspect_block_parser = inspect_subparsers.add_parser(
+        "block",
+        parents=[common_parser],
+        help="Inspect block details.",
+        description="Inspect block details.",
+    )
+    inspect_block_parser.add_argument(
+        "--node-id",
+        type=str,
+        default=None,
+        help="Target node and project identifier.",
+    )
+    inspect_block_parser.add_argument(
+        "--timeout",
+        type=float,
+        default=None,
+        help="Command deadline in seconds (max 60s).",
+    )
+    inspect_block_parser.add_argument(
+        "--json",
+        action="store_true",
+        default=False,
+        help="Format output as JSON.",
+    )
+    group = inspect_block_parser.add_mutually_exclusive_group(required=True)
+    group.add_argument(
+        "--hash",
+        type=str,
+        dest="block_hash",
+        help="Block hash.",
+    )
+    group.add_argument(
+        "--height",
+        type=int,
+        help="Block height.",
+    )
+    inspect_block_parser.set_defaults(handler=handle_inspect_block)
+
     return parser
 
 
@@ -700,6 +786,7 @@ def _map_error_category(err: Exception) -> str:
         "RpcMalformedResponseError": "malformed_response",
         "RpcProtocolError": "malformed_response",
         "RpcResponseSizeExceededError": "malformed_response",
+        "RpcResourceNotFoundError": "not_found",
         "ConfigurationError": "configuration",
     }
     return mapping.get(name, "unexpected")

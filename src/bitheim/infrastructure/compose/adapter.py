@@ -2,6 +2,7 @@
 
 import ipaddress
 import json
+import math
 import os
 import re
 import shutil
@@ -18,6 +19,7 @@ from bitheim.domain.errors import (
     RpcError,
     RpcIncompatibleNodeError,
     RpcMalformedResponseError,
+    RpcResourceNotFoundError,
     RpcResponseSizeExceededError,
     RpcTimeoutError,
     RpcUnavailableError,
@@ -26,6 +28,7 @@ from bitheim.domain.errors import (
     StartupTimeoutError,
 )
 from bitheim.domain.node import (
+    BlockSummary,
     NodeHealth,
     NodeLifecycleState,
     NodeOverview,
@@ -41,6 +44,8 @@ from bitheim.infrastructure.compose.resources import (
 )
 
 logger = get_logger("infrastructure.compose.adapter")
+
+MAX_DELEGATED_JSON_DEPTH = 32
 
 # Compose project network suffix used by Docker Compose
 _COMPOSE_NETWORK_SUFFIX = "_bitheim-net"
@@ -62,7 +67,7 @@ def _reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     return res
 
 
-def _check_json_depth(obj: Any, depth: int = 1, max_depth: int = 4) -> None:
+def _check_json_depth(obj: Any, depth: int = 1, max_depth: int = MAX_DELEGATED_JSON_DEPTH) -> None:
     """Validate JSON nesting depth."""
     if depth > max_depth:
         raise RpcMalformedResponseError(
@@ -577,10 +582,19 @@ class ComposeLifecycleAdapter(NodeLifecyclePort):
             RpcTimeoutError: If execution exceeds deadline.
             RpcError: On delegated inspection failure.
         """
-        if timeout <= 0 or timeout > 60.0:
+        if type(timeout) not in (int, float) or isinstance(timeout, bool):
+            raise RpcError("Command deadline must be a numeric value.")
+        float_timeout = float(timeout)
+
+        if (
+            float_timeout <= 0
+            or math.isnan(float_timeout)
+            or math.isinf(float_timeout)
+            or float_timeout > 60.0
+        ):
             raise RpcError("Command deadline must be a positive finite value no greater than 60s.")
 
-        deadline = time.monotonic() + timeout
+        deadline = time.monotonic() + float_timeout
 
         try:
             self._check_docker_runtime_available(deadline)
@@ -595,9 +609,169 @@ class ComposeLifecycleAdapter(NodeLifecyclePort):
                 f"Managed node '{node_id}' is stopped. Start the node before inspecting."
             )
 
+        data = self._run_delegated_inspection(node_id, deadline, "node", [])
+
+        # Strict field validation without coercion
+        version = data.get("version")
+        if type(version) is not int or isinstance(version, bool):
+            raise RpcMalformedResponseError("Invalid 'version' field in delegated output.")
+
+        subversion = data.get("subversion")
+        if (
+            not isinstance(subversion, str)
+            or not (0 < len(subversion.encode("utf-8")) <= 512)
+            or not all(" " <= c <= "~" for c in subversion)
+        ):
+            raise RpcMalformedResponseError("Invalid 'subversion' field in delegated output.")
+
+        network_active = data.get("network_active")
+        if not isinstance(network_active, bool):
+            raise RpcMalformedResponseError("Invalid 'network_active' field in delegated output.")
+
+        connections = data.get("connections")
+        if type(connections) is not int or isinstance(connections, bool) or connections < 0:
+            raise RpcMalformedResponseError("Invalid 'connections' field in delegated output.")
+
+        chain = data.get("chain")
+        if not isinstance(chain, str):
+            raise RpcMalformedResponseError("Invalid 'chain' field in delegated output.")
+
+        blocks = data.get("blocks")
+        if type(blocks) is not int or isinstance(blocks, bool) or blocks < 0:
+            raise RpcMalformedResponseError("Invalid 'blocks' field in delegated output.")
+
+        headers = data.get("headers")
+        if type(headers) is not int or isinstance(headers, bool) or headers < 0:
+            raise RpcMalformedResponseError("Invalid 'headers' field in delegated output.")
+
+        best_block_hash = data.get("best_block_hash")
+        if not isinstance(best_block_hash, str) or not _HEX_64_REGEX.match(best_block_hash):
+            raise RpcMalformedResponseError("Invalid 'best_block_hash' field in delegated output.")
+
+        median_time = data.get("median_time")
+        if type(median_time) is not int or isinstance(median_time, bool) or median_time < 0:
+            raise RpcMalformedResponseError("Invalid 'median_time' field in delegated output.")
+
+        initial_block_download = data.get("initial_block_download")
+        if not isinstance(initial_block_download, bool):
+            raise RpcMalformedResponseError(
+                "Invalid 'initial_block_download' field in delegated output."
+            )
+
+        pruned = data.get("pruned")
+        if not isinstance(pruned, bool):
+            raise RpcMalformedResponseError("Invalid 'pruned' field in delegated output.")
+
+        raw_chainwork = data.get("chainwork")
+        chainwork: str | None = None
+        if raw_chainwork is not None:
+            if not isinstance(raw_chainwork, str) or not _HEX_64_REGEX.match(raw_chainwork):
+                raise RpcMalformedResponseError("Invalid 'chainwork' field in delegated output.")
+            chainwork = raw_chainwork
+
+        if version != 310100 or chain != "regtest":
+            raise RpcIncompatibleNodeError("Delegated node reported incompatible version or chain.")
+
+        return NodeOverview(
+            version=version,
+            subversion=subversion,
+            network_active=network_active,
+            connections=connections,
+            chain=chain,
+            blocks=blocks,
+            headers=headers,
+            best_block_hash=best_block_hash,
+            median_time=median_time,
+            initial_block_download=initial_block_download,
+            pruned=pruned,
+            chainwork=chainwork,
+        )
+
+    def inspect_block(
+        self,
+        node_id: str,
+        *,
+        block_hash: str | None = None,
+        height: int | None = None,
+        timeout: float = 10.0,
+    ) -> BlockSummary:
+        """Execute delegated read-only block inspection through the Bitheim boundary.
+
+        Args:
+            node_id: Cleaned and validated node identifier.
+            block_hash: Block hash.
+            height: Block height.
+            timeout: Command deadline in seconds.
+
+        Returns:
+            Validated BlockSummary domain object.
+
+        Raises:
+            RpcUnavailableError: If node is stopped or runtime is unreachable.
+            RpcTimeoutError: If execution exceeds deadline.
+            RpcError: On delegated inspection failure.
+        """
+        if type(timeout) not in (int, float) or isinstance(timeout, bool):
+            raise RpcError("Command deadline must be a numeric value.")
+        float_timeout = float(timeout)
+
+        if (
+            float_timeout <= 0
+            or math.isnan(float_timeout)
+            or math.isinf(float_timeout)
+            or float_timeout > 60.0
+        ):
+            raise RpcError("Command deadline must be a positive finite value no greater than 60s.")
+
+        has_hash = block_hash is not None
+        has_height = height is not None
+        if has_hash == has_height:
+            raise RpcError("Exactly one of block_hash or height must be provided.")
+
+        if has_hash and (
+            not isinstance(block_hash, str) or not re.match(r"^[0-9a-f]{64}$", block_hash)
+        ):
+            raise RpcError("block_hash must be a 64-character lowercase hex string.")
+
+        if has_height and (type(height) is not int or isinstance(height, bool) or height < 0):
+            raise RpcError("height must be a non-negative integer.")
+
+        deadline = time.monotonic() + float_timeout
+
+        try:
+            self._check_docker_runtime_available(deadline)
+        except RuntimeUnavailableError:
+            raise RpcUnavailableError(
+                "Docker runtime is unavailable for node inspection."
+            ) from None
+
+        state = self._get_lifecycle_state_deadline(node_id, deadline)
+        if state == NodeLifecycleState.STOPPED:
+            raise RpcUnavailableError(
+                f"Managed node '{node_id}' is stopped. Start the node before inspecting."
+            )
+
+        extra_args = []
+        if block_hash is not None:
+            extra_args.extend(["--hash", block_hash])
+        elif height is not None:
+            extra_args.extend(["--height", str(height)])
+
+        data = self._run_delegated_inspection(node_id, deadline, "block", extra_args)
+        return self._parse_block_summary(data)
+
+    # ------------------------------------------------------------------
+    # Private helpers
+    # ------------------------------------------------------------------
+
+    def _run_delegated_inspection(
+        self, node_id: str, deadline: float, inspection_type: str, extra_args: list[str]
+    ) -> dict[str, Any]:
         r = _remaining(deadline)
         if r <= 0:
-            raise RpcTimeoutError("Timeout budget expired before delegated node inspection.")
+            raise RpcTimeoutError(
+                f"Timeout budget expired before delegated {inspection_type} inspection."
+            )
 
         env = self._build_env(node_id)
         cmd = [
@@ -613,9 +787,10 @@ class ComposeLifecycleAdapter(NodeLifecyclePort):
             "-T",
             "bitheim",
             "inspect",
-            "node",
-            "--json",
+            inspection_type,
         ]
+        cmd.extend(extra_args)
+        cmd.append("--json")
 
         try:
             res = subprocess.run(
@@ -626,163 +801,93 @@ class ComposeLifecycleAdapter(NodeLifecyclePort):
                 env=env,
                 timeout=r,
             )
-            if res.returncode != 0:
-                # Bounded parsing of structured child error contract from stderr
-                if res.stderr and len(res.stderr.encode("utf-8")) <= 16384:
-                    err_lines = res.stderr.strip().splitlines()
-                    if err_lines and (
-                        len(err_lines) == 1
-                        or (len(err_lines) == 2 and err_lines[1].startswith("bitheim: error:"))
-                    ):
-                        err_str = err_lines[0].strip()
-                        if err_str.startswith("{") and err_str.endswith("}"):
-                            import contextlib
-
-                            with contextlib.suppress(ValueError, TypeError):
-                                err_info = json.loads(
-                                    err_str, object_pairs_hook=_reject_duplicate_keys
-                                )
-                                if isinstance(err_info, dict):
-                                    err_type = None
-                                    if (
-                                        err_info.get("schema") == "bitheim.delegated-error"
-                                        and err_info.get("version") == 1
-                                        and set(err_info.keys())
-                                        == {"schema", "version", "category"}
-                                    ):
-                                        err_type = err_info.get("category")
-
-                                    if err_type == "authentication":
-                                        raise RpcAuthenticationError(
-                                            "Delegated RPC authentication failed."
-                                        )
-                                    if err_type == "incompatible":
-                                        raise RpcIncompatibleNodeError(
-                                            "Node reported incompatible chain or version."
-                                        )
-                                    if err_type == "timeout":
-                                        raise RpcTimeoutError(
-                                            "Delegated node inspection timed out."
-                                        )
-                                    if err_type == "malformed_response":
-                                        raise RpcMalformedResponseError(
-                                            "Delegated node inspection returned malformed response."
-                                        )
-                                    if err_type == "unavailable":
-                                        raise RpcUnavailableError(
-                                            "Delegated node inspection endpoint unavailable."
-                                        )
-                raise RpcUnavailableError("Delegated node inspection failed.")
-
-            if len(res.stdout.encode("utf-8")) > 65536:
-                raise RpcResponseSizeExceededError(
-                    "Delegated node inspection output exceeded size limit."
-                )
-
-            raw_out = res.stdout.strip()
-            data = json.loads(raw_out, object_pairs_hook=_reject_duplicate_keys)
-            if not isinstance(data, dict):
-                raise RpcMalformedResponseError(
-                    "Delegated node inspection returned non-object JSON."
-                )
-
-            _check_json_depth(data, depth=1)
-
-            # Strict field validation without coercion
-            version = data.get("version")
-            if type(version) is not int or isinstance(version, bool):
-                raise RpcMalformedResponseError("Invalid 'version' field in delegated output.")
-
-            subversion = data.get("subversion")
-            if (
-                not isinstance(subversion, str)
-                or not (0 < len(subversion.encode("utf-8")) <= 512)
-                or not all(" " <= c <= "~" for c in subversion)
-            ):
-                raise RpcMalformedResponseError("Invalid 'subversion' field in delegated output.")
-
-            network_active = data.get("network_active")
-            if not isinstance(network_active, bool):
-                raise RpcMalformedResponseError(
-                    "Invalid 'network_active' field in delegated output."
-                )
-
-            connections = data.get("connections")
-            if type(connections) is not int or isinstance(connections, bool) or connections < 0:
-                raise RpcMalformedResponseError("Invalid 'connections' field in delegated output.")
-
-            chain = data.get("chain")
-            if not isinstance(chain, str):
-                raise RpcMalformedResponseError("Invalid 'chain' field in delegated output.")
-
-            blocks = data.get("blocks")
-            if type(blocks) is not int or isinstance(blocks, bool) or blocks < 0:
-                raise RpcMalformedResponseError("Invalid 'blocks' field in delegated output.")
-
-            headers = data.get("headers")
-            if type(headers) is not int or isinstance(headers, bool) or headers < 0:
-                raise RpcMalformedResponseError("Invalid 'headers' field in delegated output.")
-
-            best_block_hash = data.get("best_block_hash")
-            if not isinstance(best_block_hash, str) or not _HEX_64_REGEX.match(best_block_hash):
-                raise RpcMalformedResponseError(
-                    "Invalid 'best_block_hash' field in delegated output."
-                )
-
-            median_time = data.get("median_time")
-            if type(median_time) is not int or isinstance(median_time, bool) or median_time < 0:
-                raise RpcMalformedResponseError("Invalid 'median_time' field in delegated output.")
-
-            initial_block_download = data.get("initial_block_download")
-            if not isinstance(initial_block_download, bool):
-                raise RpcMalformedResponseError(
-                    "Invalid 'initial_block_download' field in delegated output."
-                )
-
-            pruned = data.get("pruned")
-            if not isinstance(pruned, bool):
-                raise RpcMalformedResponseError("Invalid 'pruned' field in delegated output.")
-
-            raw_chainwork = data.get("chainwork")
-            chainwork: str | None = None
-            if raw_chainwork is not None:
-                if not isinstance(raw_chainwork, str) or not _HEX_64_REGEX.match(raw_chainwork):
-                    raise RpcMalformedResponseError(
-                        "Invalid 'chainwork' field in delegated output."
-                    )
-                chainwork = raw_chainwork
-
-            if version != 310100 or chain != "regtest":
-                raise RpcIncompatibleNodeError(
-                    "Delegated node reported incompatible version or chain."
-                )
-
-            return NodeOverview(
-                version=version,
-                subversion=subversion,
-                network_active=network_active,
-                connections=connections,
-                chain=chain,
-                blocks=blocks,
-                headers=headers,
-                best_block_hash=best_block_hash,
-                median_time=median_time,
-                initial_block_download=initial_block_download,
-                pruned=pruned,
-                chainwork=chainwork,
-            )
         except subprocess.TimeoutExpired:
-            raise RpcTimeoutError("Docker Compose delegated inspection timed out.") from None
-        except (json.JSONDecodeError, ValueError, KeyError):
-            raise RpcMalformedResponseError(
-                "Failed to parse delegated node inspection response."
-            ) from None
+            raise RpcTimeoutError(f"Delegated {inspection_type} inspection timed out.") from None
         except OSError:
-            raise RuntimeUnavailableError("Failed to execute Docker Compose.") from None
+            raise RpcError(f"Failed to execute delegated {inspection_type} inspection.") from None
 
-    # ------------------------------------------------------------------
-    # Private helpers
-    # ------------------------------------------------------------------
+        if res.returncode != 0:
+            if res.stderr and len(res.stderr.encode("utf-8")) <= 16384:
+                err_lines = res.stderr.strip().splitlines()
+                if err_lines and (
+                    len(err_lines) == 1
+                    or (len(err_lines) == 2 and err_lines[1].startswith("bitheim: error:"))
+                ):
+                    err_str = err_lines[0].strip()
+                    if err_str.startswith("{") and err_str.endswith("}"):
+                        import contextlib
+
+                        with contextlib.suppress(ValueError, TypeError):
+                            err_info = json.loads(err_str, object_pairs_hook=_reject_duplicate_keys)
+                            if isinstance(err_info, dict):
+                                err_type = None
+                                if (
+                                    err_info.get("schema") == "bitheim.delegated-error"
+                                    and err_info.get("version") == 1
+                                    and set(err_info.keys()) == {"schema", "version", "category"}
+                                ):
+                                    err_type = err_info.get("category")
+
+                                if err_type == "authentication":
+                                    raise RpcAuthenticationError(
+                                        "Delegated RPC authentication failed."
+                                    )
+                                if err_type == "incompatible":
+                                    raise RpcIncompatibleNodeError(
+                                        "Node reported incompatible chain or version."
+                                    )
+                                if err_type == "timeout":
+                                    raise RpcTimeoutError(
+                                        f"Delegated {inspection_type} inspection timed out."
+                                    )
+                                if err_type == "malformed_response":
+                                    raise RpcMalformedResponseError(
+                                        f"Delegated {inspection_type} returned malformed response."
+                                    )
+                                if err_type == "not_found":
+                                    raise RpcResourceNotFoundError(
+                                        "Requested resource was not found."
+                                    )
+                                if err_type == "unavailable":
+                                    raise RpcUnavailableError(
+                                        f"Delegated {inspection_type} endpoint unavailable."
+                                    )
+            raise RpcUnavailableError(f"Delegated {inspection_type} inspection failed.")
+
+        if len(res.stdout.encode("utf-8")) > 65536:
+            raise RpcResponseSizeExceededError(
+                f"Delegated {inspection_type} inspection output exceeded size limit."
+            )
+
+        try:
+            parsed = json.loads(res.stdout.strip(), object_pairs_hook=_reject_duplicate_keys)
+        except (json.JSONDecodeError, ValueError):
+            raise RpcMalformedResponseError(
+                "Failed to parse delegated inspection response."
+            ) from None
+
+        if not isinstance(parsed, dict):
+            raise RpcMalformedResponseError("Delegated inspection returned non-object JSON.")
+
+        _check_json_depth(parsed, depth=1)
+
+        return parsed
+
+    def _parse_block_summary(self, data: dict[str, Any]) -> BlockSummary:
+        try:
+            return BlockSummary(
+                hash=data.get("hash"),  # type: ignore[arg-type]
+                height=data.get("height"),  # type: ignore[arg-type]
+                confirmations=data.get("confirmations"),  # type: ignore[arg-type]
+                timestamp=data.get("timestamp"),  # type: ignore[arg-type]
+                transaction_count=data.get("transaction_count"),  # type: ignore[arg-type]
+                size=data.get("size"),  # type: ignore[arg-type]
+                weight=data.get("weight"),  # type: ignore[arg-type]
+                previous_block_hash=data.get("previous_block_hash"),
+                next_block_hash=data.get("next_block_hash"),
+            )
+        except ValueError:
+            raise RpcMalformedResponseError("Invalid domain block facts.") from None
 
     def _locate_bitheim_build_context(self) -> Path | None:
         """Locate the repository-root Dockerfile for building the Bitheim image.

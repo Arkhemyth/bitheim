@@ -13,6 +13,7 @@ from bitheim.domain.errors import (
     StartupTimeoutError,
 )
 from bitheim.domain.node import (
+    BlockSummary,
     NodeHealth,
     NodeLifecycleState,
     NodeOverview,
@@ -260,3 +261,76 @@ class NodeObservationService:
             },
         )
         return overview
+
+    def inspect_block(
+        self,
+        *,
+        block_hash: str | None = None,
+        height: int | None = None,
+        timeout: float = 10.0,
+    ) -> BlockSummary:
+        """Retrieve and validate block facts.
+
+        Args:
+            block_hash: Exactly 64-character block hash (mutually exclusive with height).
+            height: Non-negative block height (mutually exclusive with block_hash).
+            timeout: Maximum command deadline in seconds (must be positive and <= 60.0).
+
+        Returns:
+            BlockSummary immutable snapshot.
+
+        Raises:
+            RpcError: On transport, authentication, or lookup failure.
+        """
+        if type(timeout) not in (int, float) or isinstance(timeout, bool):
+            raise RpcError("Command deadline must be a numeric value.")
+        float_timeout = float(timeout)
+
+        if (
+            float_timeout <= 0
+            or math.isnan(float_timeout)
+            or math.isinf(float_timeout)
+            or float_timeout > 60.0
+        ):
+            raise RpcError("Command deadline must be a positive finite value no greater than 60s.")
+
+        has_hash = block_hash is not None
+        has_height = height is not None
+        if has_hash == has_height:
+            raise RpcError("Exactly one of block_hash or height must be provided.")
+
+        if has_hash and (
+            not isinstance(block_hash, str) or not re.match(r"^[0-9a-f]{64}$", block_hash)
+        ):
+            raise RpcError("block_hash must be a 64-character lowercase hex string.")
+
+        if has_height and (type(height) is not int or isinstance(height, bool) or height < 0):
+            raise RpcError("height must be a non-negative integer.")
+
+        try:
+            summary = self._port.get_block(block_hash=block_hash, height=height, timeout=timeout)
+        except RpcError as err:
+            logger.error(
+                "Block inspection failed",
+                extra={
+                    "event": "block_inspected_failed",
+                    "data": {
+                        "operation": "inspect_block",
+                        "outcome": "failure",
+                        "error_type": type(err).__name__,
+                    },
+                },
+            )
+            raise
+
+        logger.info(
+            "Block successfully inspected",
+            extra={
+                "event": "block_inspected",
+                "data": {
+                    "operation": "inspect_block",
+                    "outcome": "success",
+                },
+            },
+        )
+        return summary
