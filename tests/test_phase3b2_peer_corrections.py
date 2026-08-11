@@ -120,6 +120,17 @@ def test_ci_workflow_delegated_peer_inspection() -> None:
     assert "sleep 1" in workflow
     assert "trap 'docker stop ci-temp-peer" in workflow
 
+    # Assert it fails early with categorical message
+    assert "docker inspect --format '{{.State.Running}}' ci-temp-peer" in workflow
+    assert ')" != "true" ]; then' in workflow
+    assert "Error: ci-temp-peer exited prematurely." in workflow
+    assert "exit 1" in workflow
+
+    # Assert deterministic outbound connection and rpcbind
+    assert "-connect=bitcoin-core:18444" in workflow
+    assert "-rpcbind=0.0.0.0" in workflow
+    assert "-addnode=bitcoin-core:18444" not in workflow
+
     # Assert it does not echo the payload
     assert 'echo "${PEERS_JSON}"' not in workflow
 

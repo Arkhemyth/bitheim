@@ -239,11 +239,15 @@ jobs:
           BITHEIM_BITCOIN_CORE_IMAGE: bitheim-bitcoin-core:ci
           BITHEIM_IMAGE: bitheim:ci
         run: |
-          docker run -d --rm --name ci-temp-peer --network ci-integration_bitheim-net bitheim-bitcoin-core:ci -conf=/etc/bitcoin/bitcoin.conf -datadir=/data/bitcoin -addnode=bitcoin-core:18444
+          docker run -d --rm --name ci-temp-peer --network ci-integration_bitheim-net bitheim-bitcoin-core:ci -conf=/etc/bitcoin/bitcoin.conf -datadir=/data/bitcoin -rpcbind=0.0.0.0 -connect=bitcoin-core:18444
           trap 'docker stop ci-temp-peer >/dev/null 2>&1 || true' EXIT
 
           # Wait bounded loop for managed node to see it
           for i in {1..30}; do
+            if [ "$(docker inspect --format '{{.State.Running}}' ci-temp-peer 2>/dev/null || true)" != "true" ]; then
+              echo "Error: ci-temp-peer exited prematurely." >&2
+              exit 1
+            fi
             PEERS_JSON=$(docker compose -f docker/compose.yml --project-name ci-integration run --rm --no-deps -T bitheim inspect peers --json)
             PEERS_COUNT=$(printf "%s" "${PEERS_JSON}" | jq -r '.peers | length')
             if [ "${PEERS_COUNT}" -gt 0 ]; then

@@ -401,11 +401,11 @@ def test_release_plan_records_phase_3a_and_phase_3b_boundary() -> None:
     assert "block, mempool, and peer" in phase_3b
 
 
-def test_project_status_keeps_phase_number_and_names_active_subincrement() -> None:
+def test_project_status_advances_to_phase_4_after_phase_3_completion() -> None:
     status = Path("docs/PROJECT_STATUS.md").read_text(encoding="utf-8")
-    assert "Phase 3 of 6 — Secure RPC and Read-Only Observation" in status
-    assert "Phase 3A" in status.split("## Active Increment", 1)[1]
-    assert "Phase 3A of 6" not in status
+    assert "Phase 4 of 6 — Wallet and Regtest Funds" in status
+    assert "Phase 4 planning" in status.split("## Active Increment", 1)[1]
+    assert "Phase 3 secure RPC and read-only observation is complete" in status
 
 
 def test_historical_test_inventory_is_not_reduced() -> None:
