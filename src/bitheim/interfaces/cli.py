@@ -639,6 +639,53 @@ def handle_inspect_mempool(args: argparse.Namespace) -> int:
     return 0
 
 
+def handle_inspect_peers(args: argparse.Namespace) -> int:
+    """Execute 'bitheim inspect peers' command."""
+    config = load_configuration(
+        config_path=args.config,
+        data_dir=args.data_dir,
+        node_id=args.node_id,
+    )
+    timeout = args.timeout if args.timeout is not None else 10.0
+
+    if _is_container_execution_context():
+        client = BitcoinRpcClient(
+            rpc_host="bitcoin-core",
+            rpc_port=18443,
+            cookie_path=Path("/data/rpc/.cookie"),
+        )
+        service = NodeObservationService(client)
+        peers = service.inspect_peers(timeout=timeout)
+    else:
+        bitheim_image = os.environ.get("BITHEIM_IMAGE", "bitheim:local")
+        adapter = ComposeLifecycleAdapter(
+            compose_subnet=config.node.compose_subnet,
+            bitheim_image=bitheim_image,
+        )
+        peers = adapter.inspect_peers(
+            node_id=config.node.node_id,
+            timeout=timeout,
+        )
+
+    if getattr(args, "json", False):
+        sys.stdout.write(
+            json.dumps({"peers": [p.to_dict() for p in peers]}, indent=2, sort_keys=True) + "\n"
+        )
+    else:
+        for peer in peers:
+            sys.stdout.write(f"Peer {peer.peer_id} [{peer.connection_type}]: {peer.endpoint}\n")
+            sys.stdout.write(f"  Network:          {peer.network}\n")
+            sys.stdout.write(f"  Inbound:          {peer.inbound}\n")
+            sys.stdout.write(f"  Version:          {peer.protocol_version}\n")
+            sys.stdout.write(f"  Subversion:       {peer.subversion}\n")
+            sys.stdout.write(f"  Synced headers:   {peer.synced_headers}\n")
+            sys.stdout.write(f"  Synced blocks:    {peer.synced_blocks}\n")
+            sys.stdout.write(f"  Ping (s):         {peer.ping_time_seconds}\n")
+            sys.stdout.write("\n")
+
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Construct and configure the root command-line argument parser.
 
@@ -840,6 +887,34 @@ def build_parser() -> argparse.ArgumentParser:
     inspect_mempool_parser.set_defaults(
         handler=handle_inspect_mempool,
         inspect_command="mempool",
+    )
+
+    inspect_peers_parser = inspect_subparsers.add_parser(
+        "peers",
+        parents=[common_parser],
+        help="Inspect connected network peers.",
+        description="Inspect connected network peers.",
+    )
+    inspect_peers_parser.add_argument(
+        "--node-id",
+        type=str,
+        default=None,
+        help="Target node and project identifier.",
+    )
+    inspect_peers_parser.add_argument(
+        "--timeout",
+        type=float,
+        default=None,
+        help="Command deadline in seconds (max 60s).",
+    )
+    inspect_peers_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Format output as JSON.",
+    )
+    inspect_peers_parser.set_defaults(
+        handler=handle_inspect_peers,
+        inspect_command="peers",
     )
 
     return parser

@@ -1,6 +1,7 @@
 """Domain models and lifecycle states for managed Bitcoin Core nodes."""
 
 import enum
+import math
 import re
 from dataclasses import dataclass, field
 
@@ -246,4 +247,75 @@ class MempoolSummary:
             "serialized_bytes": self.serialized_bytes,
             "total_fees_satoshis": self.total_fees_satoshis,
             "transaction_count": self.transaction_count,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class PeerSummary:
+    """Typed, immutable observation snapshot of a Bitcoin Core network peer."""
+
+    peer_id: int
+    endpoint: str
+    network: str
+    inbound: bool
+    connection_type: str
+    protocol_version: int
+    subversion: str
+    synced_headers: int | None
+    synced_blocks: int | None
+    ping_time_seconds: float | None
+
+    def __post_init__(self) -> None:
+        """Validate domain invariants."""
+        if type(self.peer_id) is not int or self.peer_id < 0:
+            raise ValueError("peer_id must be a non-negative integer.")
+
+        for field_name, value in [
+            ("endpoint", self.endpoint),
+            ("network", self.network),
+            ("connection_type", self.connection_type),
+            ("subversion", self.subversion),
+        ]:
+            if not isinstance(value, str):
+                raise ValueError(f"{field_name} must be a string.")
+            if not (0 < len(value.encode("utf-8")) <= 512):
+                raise ValueError(f"{field_name} must be a non-empty string <= 512 bytes.")
+            if not all(" " <= c <= "~" for c in value):
+                raise ValueError(f"{field_name} must contain only printable ASCII characters.")
+
+        if type(self.inbound) is not bool:
+            raise ValueError("inbound must be a boolean.")
+
+        if type(self.protocol_version) is not int or self.protocol_version < 0:
+            raise ValueError("protocol_version must be a non-negative integer.")
+
+        if self.synced_headers is not None and (
+            type(self.synced_headers) is not int or self.synced_headers < 0
+        ):
+            raise ValueError("synced_headers must be a non-negative integer or None.")
+
+        if self.synced_blocks is not None and (
+            type(self.synced_blocks) is not int or self.synced_blocks < 0
+        ):
+            raise ValueError("synced_blocks must be a non-negative integer or None.")
+
+        if self.ping_time_seconds is not None:
+            if type(self.ping_time_seconds) is not float:
+                raise ValueError("ping_time_seconds must be a float or None.")
+            if not math.isfinite(self.ping_time_seconds) or self.ping_time_seconds < 0:
+                raise ValueError("ping_time_seconds must be a non-negative finite float.")
+
+    def to_dict(self) -> dict[str, object]:
+        """Return deterministic dictionary representation for JSON serialization."""
+        return {
+            "connection_type": self.connection_type,
+            "endpoint": self.endpoint,
+            "inbound": self.inbound,
+            "network": self.network,
+            "peer_id": self.peer_id,
+            "ping_time_seconds": self.ping_time_seconds,
+            "protocol_version": self.protocol_version,
+            "subversion": self.subversion,
+            "synced_blocks": self.synced_blocks,
+            "synced_headers": self.synced_headers,
         }

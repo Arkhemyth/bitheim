@@ -234,6 +234,38 @@ jobs:
           LOADED=$(printf "%s" "${MEMPOOL_JSON}" | jq -r '.loaded')
           test "${LOADED}" = "true"
 
+      - name: Integration test — delegated peer inspection
+        env:
+          BITHEIM_BITCOIN_CORE_IMAGE: bitheim-bitcoin-core:ci
+          BITHEIM_IMAGE: bitheim:ci
+        run: |
+          docker run -d --rm --name ci-temp-peer --network ci-integration_bitheim-net bitheim-bitcoin-core:ci -conf=/etc/bitcoin/bitcoin.conf -datadir=/data/bitcoin -addnode=bitcoin-core:18444
+          trap 'docker stop ci-temp-peer >/dev/null 2>&1 || true' EXIT
+
+          # Wait bounded loop for managed node to see it
+          for i in {1..30}; do
+            PEERS_JSON=$(docker compose -f docker/compose.yml --project-name ci-integration run --rm --no-deps -T bitheim inspect peers --json)
+            PEERS_COUNT=$(printf "%s" "${PEERS_JSON}" | jq -r '.peers | length')
+            if [ "${PEERS_COUNT}" -gt 0 ]; then
+              break
+            fi
+            sleep 1
+          done
+
+          test "${PEERS_COUNT}" -gt 0
+
+          # Assert safe field types using jq
+          printf "%s" "${PEERS_JSON}" | jq -e '.peers[0].peer_id | type == "number"' >/dev/null
+          printf "%s" "${PEERS_JSON}" | jq -e '.peers[0].endpoint | type == "string"' >/dev/null
+          printf "%s" "${PEERS_JSON}" | jq -e '.peers[0].network | type == "string"' >/dev/null
+          printf "%s" "${PEERS_JSON}" | jq -e '.peers[0].inbound | type == "boolean"' >/dev/null
+          printf "%s" "${PEERS_JSON}" | jq -e '.peers[0].connection_type | type == "string"' >/dev/null
+          printf "%s" "${PEERS_JSON}" | jq -e '.peers[0].protocol_version | type == "number"' >/dev/null
+          printf "%s" "${PEERS_JSON}" | jq -e '.peers[0].subversion | type == "string"' >/dev/null
+          printf "%s" "${PEERS_JSON}" | jq -e '.peers[0].synced_headers | (type == "number" or type == "null")' >/dev/null
+          printf "%s" "${PEERS_JSON}" | jq -e '.peers[0].synced_blocks | (type == "number" or type == "null")' >/dev/null
+          printf "%s" "${PEERS_JSON}" | jq -e '.peers[0].ping_time_seconds | (type == "number" or type == "null")' >/dev/null
+
       - name: Integration test — stop topology
         env:
           BITHEIM_BITCOIN_CORE_IMAGE: bitheim-bitcoin-core:ci

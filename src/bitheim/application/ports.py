@@ -9,6 +9,7 @@ from bitheim.domain.node import (
     NodeLifecycleState,
     NodeOverview,
     NodeStatus,
+    PeerSummary,
 )
 
 
@@ -126,6 +127,20 @@ class NodeObservationPort(Protocol):
 
         Returns:
             MempoolSummary immutable snapshot.
+
+        Raises:
+            RpcError: On lookup or validation failure.
+        """
+        ...
+
+    def get_peers(self, timeout: float = 10.0) -> tuple[PeerSummary, ...]:
+        """Retrieve a validated tuple of network peers.
+
+        Args:
+            timeout: Maximum command deadline in seconds (must be positive and <= 60.0).
+
+        Returns:
+            Tuple of PeerSummary immutable snapshots sorted by peer_id.
 
         Raises:
             RpcError: On lookup or validation failure.
