@@ -10,7 +10,7 @@
 Phase 3 of 6 — Secure RPC and Read-Only Observation
 
 ## Active Increment
-Phase 3B.2a: Protected executable contracts for read-only mempool observation are defined and awaiting integration before implementation begins.
+Phase 3B.2b: Plan and define protected executable contracts for read-only peer observation before implementation begins.
 
 ## Active Specifications
 - [`SPEC-0004: Managed Regtest Node Runtime Contract`](specs/SPEC-0004-managed-regtest-node-runtime.md) (Accepted)
@@ -23,16 +23,16 @@ Phase 3B.2a: Protected executable contracts for read-only mempool observation ar
 - [`ADR-0005: Docker Compose Runtime Topology`](adr/ADR-0005-docker-compose-runtime-topology.md) (Accepted)
 
 ## Status
-Phase 3B.1 block inspection is completed. Phase 3B.2 is intentionally split into two narrow implementation cycles: 3B.2a mempool observation and 3B.2b peer observation. The mempool contracts are prepared but not yet implemented; peer contract preparation remains pending, so Phase 3 is incomplete.
+Phase 3B.1 block inspection and Phase 3B.2a mempool observation are completed. Mempool facts are typed and immutable, fees are converted exactly to integer satoshis, CLI output is deterministic, Compose delegation remains read-only, and real Bitcoin Core 31.1 validation is included. Peer observation remains pending, so Phase 3 is incomplete.
 
 ## Most Recently Protected Executable Contracts
 - Path: [`tests/test_phase3b2_mempool_contracts.py`](../tests/test_phase3b2_mempool_contracts.py)
 - SHA-256: `57f828b99a6e066f64f23d65234d418fa01535815aea0dff60445206412ada1c`
-- Baseline: 45 mempool contract cases fail only through the file-level capability guard while the public mempool surface is absent. All historical tests remain active.
+- Baseline: 45 protected mempool contract cases are active and passing without modification, supplemented by 3 focused correction regressions in [`tests/test_phase3b2_mempool_corrections.py`](../tests/test_phase3b2_mempool_corrections.py). All historical tests remain active.
 - Preservation rule: implementation may add complementary tests but must not modify this file or remove, skip, weaken, replace, or broadly rewrite tests integrated into `main` without explicit maintainer approval under [the increment workflow](../.agents/rules/increment-workflow.md).
 
 ## Next Action
-Integrate the Phase 3B.2a mempool contracts, then delegate only the production code and complementary tests required to satisfy them without modifying protected or historical tests.
+Define and integrate the protected Phase 3B.2b peer-observation contracts before delegating their implementation.
 
 ## Blockers
 None.
@@ -65,9 +65,10 @@ None.
 - Implemented and integrated Phase 3A secure node and chain observation through PR #12: bounded authenticated JSON-RPC, immutable node overview, application and Compose delegation boundaries, deterministic human and JSON CLI output, read-only doctor integration, protected contracts, and real Bitcoin Core 31.1 validation.
 - Established the reusable contract-first increment workflow and split Phase 3B into independently reviewable block-inspection and mempool/peer vertical increments.
 - Completed and independently reviewed Phase 3B.1 read-only block inspection by hash or height while preserving its 48 protected contracts and all historical tests.
+- Completed and independently reviewed Phase 3B.2a read-only mempool observation while preserving its 45 protected contracts and all historical tests.
 
 ## In Progress
-- Phase 3B.2a contract-first preparation for read-only mempool observation.
+- Phase 3B.2b planning and contract-first preparation for read-only peer observation.
 
 ## Future Hardening (Post-v0.1.0 / Towards v1.0, Non-Blocking)
 - Automated code coverage measurement and thresholds.

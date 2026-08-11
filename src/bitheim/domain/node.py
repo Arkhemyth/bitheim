@@ -209,3 +209,41 @@ class BlockSummary:
             "transaction_count": self.transaction_count,
             "weight": self.weight,
         }
+
+
+@dataclass(frozen=True, slots=True)
+class MempoolSummary:
+    """Typed, immutable observation snapshot of the Bitcoin Core memory pool."""
+
+    loaded: bool
+    transaction_count: int
+    serialized_bytes: int
+    dynamic_memory_usage: int
+    max_memory: int
+    total_fees_satoshis: int
+
+    def __post_init__(self) -> None:
+        """Validate domain invariants."""
+        if type(self.loaded) is not bool:
+            raise ValueError("loaded must be a boolean.")
+        if type(self.transaction_count) is not int or self.transaction_count < 0:
+            raise ValueError("transaction_count must be a non-negative integer.")
+        if type(self.serialized_bytes) is not int or self.serialized_bytes < 0:
+            raise ValueError("serialized_bytes must be a non-negative integer.")
+        if type(self.dynamic_memory_usage) is not int or self.dynamic_memory_usage < 0:
+            raise ValueError("dynamic_memory_usage must be a non-negative integer.")
+        if type(self.max_memory) is not int or self.max_memory < 0:
+            raise ValueError("max_memory must be a non-negative integer.")
+        if type(self.total_fees_satoshis) is not int or self.total_fees_satoshis < 0:
+            raise ValueError("total_fees_satoshis must be a non-negative integer.")
+
+    def to_dict(self) -> dict[str, object]:
+        """Return deterministic dictionary representation for JSON serialization."""
+        return {
+            "dynamic_memory_usage": self.dynamic_memory_usage,
+            "loaded": self.loaded,
+            "max_memory": self.max_memory,
+            "serialized_bytes": self.serialized_bytes,
+            "total_fees_satoshis": self.total_fees_satoshis,
+            "transaction_count": self.transaction_count,
+        }

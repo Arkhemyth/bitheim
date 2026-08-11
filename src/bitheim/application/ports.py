@@ -4,6 +4,7 @@ from typing import Protocol
 
 from bitheim.domain.node import (
     BlockSummary,
+    MempoolSummary,
     NodeHealth,
     NodeLifecycleState,
     NodeOverview,
@@ -114,5 +115,19 @@ class NodeObservationPort(Protocol):
         Raises:
             RpcError: On lookup or validation failure.
             RpcResourceNotFoundError: If the block is not found.
+        """
+        ...
+
+    def get_mempool(self, timeout: float = 10.0) -> MempoolSummary:
+        """Retrieve a validated memory pool summary.
+
+        Args:
+            timeout: Maximum command deadline in seconds (must be positive and <= 60.0).
+
+        Returns:
+            MempoolSummary immutable snapshot.
+
+        Raises:
+            RpcError: On lookup or validation failure.
         """
         ...

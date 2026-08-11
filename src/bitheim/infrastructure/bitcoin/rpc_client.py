@@ -11,6 +11,7 @@ import stat
 import time
 import urllib.error
 import urllib.request
+from decimal import Decimal, DecimalException
 from pathlib import Path
 from typing import Any, Final
 
@@ -27,7 +28,7 @@ from bitheim.domain.errors import (
     RpcTimeoutError,
     RpcUnavailableError,
 )
-from bitheim.domain.node import BlockSummary, NodeOverview
+from bitheim.domain.node import BlockSummary, MempoolSummary, NodeOverview
 
 logger = get_logger("infrastructure.bitcoin.rpc_client")
 
@@ -38,7 +39,7 @@ DEFAULT_COOKIE_PATH: Final[Path] = Path("/data/rpc/.cookie")
 
 ALLOWED_RPC_HOSTS: Final[frozenset[str]] = frozenset({"bitcoin-core"})
 ALLOWED_RPC_METHODS: Final[frozenset[str]] = frozenset(
-    {"getnetworkinfo", "getblockchaininfo", "getblockhash", "getblock"}
+    {"getnetworkinfo", "getblockchaininfo", "getblockhash", "getblock", "getmempoolinfo"}
 )
 
 MAX_COOKIE_SIZE_BYTES: Final[int] = 4096  # 4 KiB
@@ -338,7 +339,9 @@ class BitcoinRpcClient(NodeObservationPort):
 
         try:
             raw_text = body_bytes.decode("utf-8")
-            data = json.loads(raw_text, object_pairs_hook=_reject_duplicate_keys)
+            data = json.loads(
+                raw_text, object_pairs_hook=_reject_duplicate_keys, parse_float=Decimal
+            )
         except UnicodeDecodeError:
             raise RpcMalformedResponseError("RPC response is not valid UTF-8.") from None
         except (json.JSONDecodeError, ValueError):
@@ -621,3 +624,78 @@ class BitcoinRpcClient(NodeObservationPort):
             previous_block_hash=previousblockhash,
             next_block_hash=nextblockhash,
         )
+
+    def get_mempool(self, timeout: float = DEFAULT_DEADLINE_SECONDS) -> MempoolSummary:
+        if not isinstance(timeout, (int, float)) or isinstance(timeout, bool):
+            raise RpcError("Parameter 'timeout' must be a numeric value.")
+        float_timeout = float(timeout)
+        if (
+            float_timeout <= 0
+            or math.isnan(float_timeout)
+            or math.isinf(float_timeout)
+            or float_timeout > MAX_DEADLINE_SECONDS
+        ):
+            raise RpcError("Command deadline must be a positive finite value no greater than 60s.")
+
+        deadline = time.monotonic() + float_timeout
+
+        mempool_data = self._send_request(
+            "getmempoolinfo", [], req_id="bitheim-req-mempool", deadline=deadline
+        )
+        if not isinstance(mempool_data, dict):
+            raise RpcMalformedResponseError("getmempoolinfo result must be a JSON object.")
+
+        return self._parse_mempool_summary(mempool_data)
+
+    def _parse_mempool_summary(self, data: dict[str, Any]) -> MempoolSummary:
+        loaded = data.get("loaded")
+        if type(loaded) is not bool:
+            raise RpcMalformedResponseError("Field 'loaded' must be a boolean.")
+
+        size = data.get("size")
+        if type(size) is not int or isinstance(size, bool) or size < 0:
+            raise RpcMalformedResponseError("Field 'size' must be a non-negative integer.")
+
+        bytes_val = data.get("bytes")
+        if type(bytes_val) is not int or isinstance(bytes_val, bool) or bytes_val < 0:
+            raise RpcMalformedResponseError("Field 'bytes' must be a non-negative integer.")
+
+        usage = data.get("usage")
+        if type(usage) is not int or isinstance(usage, bool) or usage < 0:
+            raise RpcMalformedResponseError("Field 'usage' must be a non-negative integer.")
+
+        maxmempool = data.get("maxmempool")
+        if type(maxmempool) is not int or isinstance(maxmempool, bool) or maxmempool < 0:
+            raise RpcMalformedResponseError("Field 'maxmempool' must be a non-negative integer.")
+
+        total_fee = data.get("total_fee")
+        if not isinstance(total_fee, Decimal):
+            raise RpcMalformedResponseError("Field 'total_fee' must be exactly a Decimal.")
+
+        if not total_fee.is_finite() or total_fee < 0:
+            raise RpcMalformedResponseError(
+                "Field 'total_fee' must be a non-negative finite value."
+            )
+
+        # Convert to exact satoshis
+        try:
+            fee_sats = total_fee * Decimal("100000000")
+            if fee_sats != fee_sats.to_integral_value():
+                raise RpcMalformedResponseError(
+                    "Field 'total_fee' cannot have sub-satoshi precision."
+                )
+            total_fees_satoshis = int(fee_sats)
+        except (DecimalException, OverflowError, ValueError):
+            raise RpcMalformedResponseError("Field 'total_fee' conversion failed.") from None
+
+        try:
+            return MempoolSummary(
+                loaded=loaded,
+                transaction_count=size,
+                serialized_bytes=bytes_val,
+                dynamic_memory_usage=usage,
+                max_memory=maxmempool,
+                total_fees_satoshis=total_fees_satoshis,
+            )
+        except ValueError:
+            raise RpcMalformedResponseError("Invalid domain mempool facts.") from None
