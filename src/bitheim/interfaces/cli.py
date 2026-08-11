@@ -598,6 +598,47 @@ def handle_inspect_block(args: argparse.Namespace) -> int:
     return 0
 
 
+def handle_inspect_mempool(args: argparse.Namespace) -> int:
+    """Execute 'bitheim inspect mempool' command."""
+    config = load_configuration(
+        config_path=args.config,
+        data_dir=args.data_dir,
+        node_id=args.node_id,
+    )
+    timeout = args.timeout if args.timeout is not None else 10.0
+
+    if _is_container_execution_context():
+        client = BitcoinRpcClient(
+            rpc_host="bitcoin-core",
+            rpc_port=18443,
+            cookie_path=Path("/data/rpc/.cookie"),
+        )
+        service = NodeObservationService(client)
+        summary = service.inspect_mempool(timeout=timeout)
+    else:
+        bitheim_image = os.environ.get("BITHEIM_IMAGE", "bitheim:local")
+        adapter = ComposeLifecycleAdapter(
+            compose_subnet=config.node.compose_subnet,
+            bitheim_image=bitheim_image,
+        )
+        summary = adapter.inspect_mempool(
+            node_id=config.node.node_id,
+            timeout=timeout,
+        )
+
+    if getattr(args, "json", False):
+        sys.stdout.write(json.dumps(summary.to_dict(), indent=2, sort_keys=True) + "\n")
+    else:
+        sys.stdout.write(f"Loaded:                 {summary.loaded}\n")
+        sys.stdout.write(f"Transactions:           {summary.transaction_count}\n")
+        sys.stdout.write(f"Serialized size:        {summary.serialized_bytes}\n")
+        sys.stdout.write(f"Dynamic memory usage:   {summary.dynamic_memory_usage}\n")
+        sys.stdout.write(f"Max memory:             {summary.max_memory}\n")
+        sys.stdout.write(f"Total fees (sats):      {summary.total_fees_satoshis}\n")
+
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Construct and configure the root command-line argument parser.
 
@@ -772,6 +813,34 @@ def build_parser() -> argparse.ArgumentParser:
         help="Block height.",
     )
     inspect_block_parser.set_defaults(handler=handle_inspect_block)
+
+    inspect_mempool_parser = inspect_subparsers.add_parser(
+        "mempool",
+        parents=[common_parser],
+        help="Inspect memory pool facts.",
+        description="Inspect memory pool facts.",
+    )
+    inspect_mempool_parser.add_argument(
+        "--node-id",
+        type=str,
+        default=None,
+        help="Target node and project identifier.",
+    )
+    inspect_mempool_parser.add_argument(
+        "--timeout",
+        type=float,
+        default=None,
+        help="Command deadline in seconds (max 60s).",
+    )
+    inspect_mempool_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Format output as JSON.",
+    )
+    inspect_mempool_parser.set_defaults(
+        handler=handle_inspect_mempool,
+        inspect_command="mempool",
+    )
 
     return parser
 

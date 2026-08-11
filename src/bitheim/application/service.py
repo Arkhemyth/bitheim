@@ -14,6 +14,7 @@ from bitheim.domain.errors import (
 )
 from bitheim.domain.node import (
     BlockSummary,
+    MempoolSummary,
     NodeHealth,
     NodeLifecycleState,
     NodeOverview,
@@ -329,6 +330,57 @@ class NodeObservationService:
                 "event": "block_inspected",
                 "data": {
                     "operation": "inspect_block",
+                    "outcome": "success",
+                },
+            },
+        )
+        return summary
+
+    def inspect_mempool(self, timeout: float = 10.0) -> MempoolSummary:
+        """Retrieve and validate mempool facts.
+
+        Args:
+            timeout: Maximum command deadline in seconds (must be positive and <= 60.0).
+
+        Returns:
+            MempoolSummary immutable snapshot.
+
+        Raises:
+            RpcError: On transport, authentication, or lookup failure.
+        """
+        if type(timeout) not in (int, float) or isinstance(timeout, bool):
+            raise RpcError("Command deadline must be a numeric value.")
+        float_timeout = float(timeout)
+        if (
+            float_timeout <= 0
+            or math.isnan(float_timeout)
+            or math.isinf(float_timeout)
+            or float_timeout > 60.0
+        ):
+            raise RpcError("Command deadline must be a positive finite value no greater than 60s.")
+
+        try:
+            summary = self._port.get_mempool(timeout=timeout)
+        except RpcError as err:
+            logger.error(
+                "Mempool inspection failed",
+                extra={
+                    "event": "mempool_inspected_failed",
+                    "data": {
+                        "operation": "inspect_mempool",
+                        "outcome": "failure",
+                        "error_type": type(err).__name__,
+                    },
+                },
+            )
+            raise
+
+        logger.info(
+            "Mempool successfully inspected",
+            extra={
+                "event": "mempool_inspected",
+                "data": {
+                    "operation": "inspect_mempool",
                     "outcome": "success",
                 },
             },

@@ -29,6 +29,7 @@ from bitheim.domain.errors import (
 )
 from bitheim.domain.node import (
     BlockSummary,
+    MempoolSummary,
     NodeHealth,
     NodeLifecycleState,
     NodeOverview,
@@ -760,6 +761,49 @@ class ComposeLifecycleAdapter(NodeLifecyclePort):
         data = self._run_delegated_inspection(node_id, deadline, "block", extra_args)
         return self._parse_block_summary(data)
 
+    def inspect_mempool(self, node_id: str, timeout: float = 10.0) -> MempoolSummary:
+        """Execute a safe delegated mempool inspection via compose run.
+
+        Args:
+            node_id: Cleaned and validated node identifier.
+            timeout: Command deadline in seconds.
+
+        Returns:
+            Validated MempoolSummary domain object.
+
+        Raises:
+            RpcUnavailableError: If node is stopped or runtime is unreachable.
+            RpcTimeoutError: If execution exceeds deadline.
+            RpcError: On delegated inspection failure.
+        """
+        if type(timeout) not in (int, float) or isinstance(timeout, bool):
+            raise RpcError("Command deadline must be a numeric value.")
+        float_timeout = float(timeout)
+
+        if (
+            float_timeout <= 0
+            or math.isnan(float_timeout)
+            or math.isinf(float_timeout)
+            or float_timeout > 60.0
+        ):
+            raise RpcError("Command deadline must be a positive finite value no greater than 60s.")
+
+        deadline = time.monotonic() + float_timeout
+
+        try:
+            self._check_docker_runtime_available(deadline)
+        except RuntimeUnavailableError:
+            raise RpcUnavailableError(
+                "Docker runtime is unavailable for mempool inspection."
+            ) from None
+
+        state = self._get_lifecycle_state_deadline(node_id, deadline)
+        if state == NodeLifecycleState.STOPPED:
+            raise RpcUnavailableError("Managed node is stopped. Start the node before inspecting.")
+
+        data = self._run_delegated_inspection(node_id, deadline, "mempool", [])
+        return self._parse_mempool_summary(data)
+
     # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------
@@ -888,6 +932,19 @@ class ComposeLifecycleAdapter(NodeLifecyclePort):
             )
         except ValueError:
             raise RpcMalformedResponseError("Invalid domain block facts.") from None
+
+    def _parse_mempool_summary(self, data: dict[str, Any]) -> MempoolSummary:
+        try:
+            return MempoolSummary(
+                loaded=data.get("loaded"),  # type: ignore[arg-type]
+                transaction_count=data.get("transaction_count"),  # type: ignore[arg-type]
+                serialized_bytes=data.get("serialized_bytes"),  # type: ignore[arg-type]
+                dynamic_memory_usage=data.get("dynamic_memory_usage"),  # type: ignore[arg-type]
+                max_memory=data.get("max_memory"),  # type: ignore[arg-type]
+                total_fees_satoshis=data.get("total_fees_satoshis"),  # type: ignore[arg-type]
+            )
+        except ValueError:
+            raise RpcMalformedResponseError("Invalid domain mempool facts.") from None
 
     def _locate_bitheim_build_context(self) -> Path | None:
         """Locate the repository-root Dockerfile for building the Bitheim image.

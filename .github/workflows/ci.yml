@@ -225,6 +225,15 @@ jobs:
           HEIGHT=$(printf "%s" "${BLOCK_JSON}" | jq -r '.height')
           test "${HEIGHT}" = "0"
 
+      - name: Integration test — delegated mempool inspection
+        env:
+          BITHEIM_BITCOIN_CORE_IMAGE: bitheim-bitcoin-core:ci
+          BITHEIM_IMAGE: bitheim:ci
+        run: |
+          MEMPOOL_JSON=$(docker compose -f docker/compose.yml --project-name ci-integration run --rm --no-deps -T bitheim inspect mempool --json)
+          LOADED=$(printf "%s" "${MEMPOOL_JSON}" | jq -r '.loaded')
+          test "${LOADED}" = "true"
+
       - name: Integration test — stop topology
         env:
           BITHEIM_BITCOIN_CORE_IMAGE: bitheim-bitcoin-core:ci
