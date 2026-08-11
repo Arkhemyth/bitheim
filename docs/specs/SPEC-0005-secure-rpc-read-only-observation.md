@@ -139,7 +139,7 @@ A mempool summary contains loaded state, transaction count, serialized bytes, dy
 
 ### 8.4 Peer Summary
 
-Each peer summary contains a non-negative peer ID, network, inbound flag, connection type, protocol version, sanitized subversion, starting height, synced header/block heights, and optional bounded ping duration. The peer endpoint may be presented because the user explicitly requested peer inspection, but it is sensitive operational output and must never enter structured logs or unrelated diagnostics.
+Each peer summary contains a non-negative peer ID, network, inbound flag, connection type, protocol version, sanitized subversion, synced header/block heights, and optional bounded ping duration. A supported Bitcoin Core sentinel for an unknown synced height is represented as an absent optional value rather than a negative domain height. `startingheight` is intentionally excluded because [Bitcoin Core 31.x no longer returns it by default](https://github.com/bitcoin/bitcoin/blob/master/doc/release-notes/release-notes-31.0.md) and Bitheim does not enable deprecated RPC fields. The peer endpoint may be presented because the user explicitly requested peer inspection, but it is sensitive operational output and must never enter structured logs or unrelated diagnostics.
 
 Peer results have a conservative maximum collection size. Exceeding it is a typed malformed-response failure rather than an invitation to allocate an unbounded collection.
 
