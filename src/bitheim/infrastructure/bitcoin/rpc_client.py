@@ -22,11 +22,12 @@ from bitheim.domain.errors import (
     RpcIncompatibleNodeError,
     RpcMalformedResponseError,
     RpcProtocolError,
+    RpcResourceNotFoundError,
     RpcResponseSizeExceededError,
     RpcTimeoutError,
     RpcUnavailableError,
 )
-from bitheim.domain.node import NodeOverview
+from bitheim.domain.node import BlockSummary, NodeOverview
 
 logger = get_logger("infrastructure.bitcoin.rpc_client")
 
@@ -36,7 +37,9 @@ DEFAULT_RPC_PORT: Final[int] = 18443
 DEFAULT_COOKIE_PATH: Final[Path] = Path("/data/rpc/.cookie")
 
 ALLOWED_RPC_HOSTS: Final[frozenset[str]] = frozenset({"bitcoin-core"})
-ALLOWED_RPC_METHODS: Final[frozenset[str]] = frozenset({"getnetworkinfo", "getblockchaininfo"})
+ALLOWED_RPC_METHODS: Final[frozenset[str]] = frozenset(
+    {"getnetworkinfo", "getblockchaininfo", "getblockhash", "getblock"}
+)
 
 MAX_COOKIE_SIZE_BYTES: Final[int] = 4096  # 4 KiB
 MAX_RESPONSE_SIZE_BYTES: Final[int] = 4 * 1024 * 1024  # 4 MiB
@@ -215,7 +218,7 @@ class BitcoinRpcClient(NodeObservationPort):
         params: list[Any],
         req_id: str,
         deadline: float,
-    ) -> dict[str, Any]:
+    ) -> Any:
         """Dispatch a single authenticated JSON-RPC request under the shared deadline."""
         if method not in ALLOWED_RPC_METHODS:
             raise RpcError("RPC method is not permitted.")
@@ -259,7 +262,7 @@ class BitcoinRpcClient(NodeObservationPort):
 
         try:
             with self._opener.open(req, timeout=remaining_after_auth) as resp:
-                data = self._read_and_parse_envelope(resp, req_id, deadline)
+                result = self._read_and_parse_envelope(resp, req_id, deadline)
         except urllib.error.HTTPError as err:
             if err.code in (401, 403):
                 raise RpcAuthenticationError(
@@ -287,9 +290,6 @@ class BitcoinRpcClient(NodeObservationPort):
             "RPC request succeeded",
             extra={"event": "rpc_request_succeeded", "data": {"method": method}},
         )
-        result = data["result"]
-        if not isinstance(result, dict):
-            raise RpcMalformedResponseError("RPC result must be a JSON object.")
         return result
 
     def _apply_response_timeout(self, resp: Any, timeout: float) -> None:
@@ -302,7 +302,7 @@ class BitcoinRpcClient(NodeObservationPort):
             if real_sock is not None and hasattr(real_sock, "settimeout"):
                 real_sock.settimeout(timeout)
 
-    def _read_and_parse_envelope(self, resp: Any, req_id: str, deadline: float) -> dict[str, Any]:
+    def _read_and_parse_envelope(self, resp: Any, req_id: str, deadline: float) -> Any:
         """Read and parse the JSON-RPC envelope under a strict deadline and size limit."""
         chunks: list[bytes] = []
         total_bytes = 0
@@ -368,15 +368,19 @@ class BitcoinRpcClient(NodeObservationPort):
             code = data["error"].get("code")
             if type(code) is not int or isinstance(code, bool):
                 raise RpcMalformedResponseError("RPC error code must be a valid integer.")
+
+            if code == -5:
+                raise RpcResourceNotFoundError("RPC resource not found.")
+
             safe_msg = SAFE_RPC_ERROR_MAPPINGS.get(
                 code, f"Bitcoin Core returned RPC error code {code}."
             )
             raise RpcProtocolError(safe_msg) from None
 
-        if data["result"] is None or not isinstance(data["result"], dict):
-            raise RpcMalformedResponseError("RPC result member must be a JSON object.")
+        if data["result"] is None:
+            raise RpcMalformedResponseError("RPC result member cannot be null.")
 
-        return data
+        return data["result"]
 
     def get_node_overview(self, timeout: float = DEFAULT_DEADLINE_SECONDS) -> NodeOverview:
         """Retrieve validated node and blockchain overview facts under one shared deadline.
@@ -400,6 +404,8 @@ class BitcoinRpcClient(NodeObservationPort):
         net_info = self._send_request(
             "getnetworkinfo", [], req_id="bitheim-req-1", deadline=deadline
         )
+        if not isinstance(net_info, dict):
+            raise RpcMalformedResponseError("RPC result must be a JSON object.")
 
         # 1. Validate getnetworkinfo fields
         version = net_info.get("version")
@@ -433,6 +439,8 @@ class BitcoinRpcClient(NodeObservationPort):
         chain_info = self._send_request(
             "getblockchaininfo", [], req_id="bitheim-req-2", deadline=deadline
         )
+        if not isinstance(chain_info, dict):
+            raise RpcMalformedResponseError("RPC result must be a JSON object.")
 
         # 2. Validate getblockchaininfo fields
         chain = chain_info.get("chain")
@@ -497,3 +505,119 @@ class BitcoinRpcClient(NodeObservationPort):
             )
         except ValueError as err:
             raise RpcMalformedResponseError(f"Invalid domain overview facts: {err}") from None
+
+    def get_block(
+        self,
+        *,
+        block_hash: str | None = None,
+        height: int | None = None,
+        timeout: float = DEFAULT_DEADLINE_SECONDS,
+    ) -> BlockSummary:
+        if not isinstance(timeout, (int, float)) or isinstance(timeout, bool):
+            raise RpcError("Parameter 'timeout' must be a numeric value.")
+        float_timeout = float(timeout)
+        if (
+            float_timeout <= 0
+            or math.isnan(float_timeout)
+            or math.isinf(float_timeout)
+            or float_timeout > MAX_DEADLINE_SECONDS
+        ):
+            raise RpcError("Command deadline must be a positive finite value no greater than 60s.")
+
+        has_hash = block_hash is not None
+        has_height = height is not None
+        if has_hash == has_height:
+            raise RpcError("Exactly one of block_hash or height must be provided.")
+
+        deadline = time.monotonic() + float_timeout
+
+        if has_height:
+            if type(height) is not int or isinstance(height, bool) or height < 0:
+                raise RpcError("Height must be a non-negative integer.")
+            hash_res = self._send_request(
+                "getblockhash", [height], req_id="bitheim-req-hash", deadline=deadline
+            )
+            if not isinstance(hash_res, str):
+                raise RpcMalformedResponseError("getblockhash result must be a string.")
+            resolved_hash = hash_res
+        else:
+            resolved_hash = str(block_hash)
+
+        if not _HEX_64_REGEX.match(resolved_hash):
+            raise RpcMalformedResponseError("Resolved block hash is invalid.")
+
+        block_data = self._send_request(
+            "getblock", [resolved_hash, 1], req_id="bitheim-req-block", deadline=deadline
+        )
+        if not isinstance(block_data, dict):
+            raise RpcMalformedResponseError("getblock result must be a JSON object.")
+
+        summary = self._parse_block_summary(block_data)
+        if summary.hash != resolved_hash:
+            raise RpcMalformedResponseError(
+                "Returned block hash does not match requested block hash."
+            )
+        return summary
+
+    def _parse_block_summary(self, data: dict[str, Any]) -> BlockSummary:
+        hash_val = data.get("hash")
+        if not isinstance(hash_val, str) or not _HEX_64_REGEX.match(hash_val):
+            raise RpcMalformedResponseError("Field 'hash' must be a valid 64-character hex string.")
+
+        height = data.get("height")
+        if type(height) is not int or isinstance(height, bool) or height < 0:
+            raise RpcMalformedResponseError("Field 'height' must be a non-negative integer.")
+
+        confirmations = data.get("confirmations")
+        if type(confirmations) is not int or isinstance(confirmations, bool) or confirmations < 0:
+            raise RpcMalformedResponseError("Field 'confirmations' must be a non-negative integer.")
+
+        timestamp = data.get("time")
+        if type(timestamp) is not int or isinstance(timestamp, bool) or timestamp < 0:
+            raise RpcMalformedResponseError("Field 'time' must be a non-negative integer.")
+
+        tx = data.get("tx")
+        if not isinstance(tx, list):
+            raise RpcMalformedResponseError("Field 'tx' must be a list.")
+        for txid in tx:
+            if not isinstance(txid, str) or not _HEX_64_REGEX.match(txid):
+                raise RpcMalformedResponseError(
+                    "Field 'tx' must contain only 64-character hex strings."
+                )
+        transaction_count = len(tx)
+
+        size = data.get("size")
+        if type(size) is not int or isinstance(size, bool) or size < 0:
+            raise RpcMalformedResponseError("Field 'size' must be a non-negative integer.")
+
+        weight = data.get("weight")
+        if type(weight) is not int or isinstance(weight, bool) or weight < 0:
+            raise RpcMalformedResponseError("Field 'weight' must be a non-negative integer.")
+
+        previousblockhash = data.get("previousblockhash")
+        if previousblockhash is not None and (
+            not isinstance(previousblockhash, str) or not _HEX_64_REGEX.match(previousblockhash)
+        ):
+            raise RpcMalformedResponseError(
+                "Field 'previousblockhash' must be a valid hex string or missing."
+            )
+
+        nextblockhash = data.get("nextblockhash")
+        if nextblockhash is not None and (
+            not isinstance(nextblockhash, str) or not _HEX_64_REGEX.match(nextblockhash)
+        ):
+            raise RpcMalformedResponseError(
+                "Field 'nextblockhash' must be a valid hex string or missing."
+            )
+
+        return BlockSummary(
+            hash=hash_val,
+            height=height,
+            confirmations=confirmations,
+            timestamp=timestamp,
+            transaction_count=transaction_count,
+            size=size,
+            weight=weight,
+            previous_block_hash=previousblockhash,
+            next_block_hash=nextblockhash,
+        )

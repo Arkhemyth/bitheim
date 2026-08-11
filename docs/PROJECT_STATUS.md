@@ -10,7 +10,7 @@
 Phase 3 of 6 — Secure RPC and Read-Only Observation
 
 ## Active Increment
-Phase 3B.1: Implement read-only block inspection by hash or height against the protected executable contracts.
+Phase 3B.2: Plan and define protected executable contracts for read-only mempool and peer observation before implementation begins.
 
 ## Active Specifications
 - [`SPEC-0004: Managed Regtest Node Runtime Contract`](specs/SPEC-0004-managed-regtest-node-runtime.md) (Accepted)
@@ -23,16 +23,16 @@ Phase 3B.1: Implement read-only block inspection by hash or height against the p
 - [`ADR-0005: Docker Compose Runtime Topology`](adr/ADR-0005-docker-compose-runtime-topology.md) (Accepted)
 
 ## Status
-Phase 3A was integrated through PR #12. Phase 3B is split into two contract-first vertical increments: Phase 3B.1 for block inspection, followed by Phase 3B.2 for mempool and peer observation. The Phase 3B.1 executable contracts are defined and intentionally remain strict expected failures only while the complete public block-inspection surface is absent. Phase 3 remains incomplete.
+Phase 3B.1 block inspection is completed: immutable typed summaries, bounded authenticated RPC lookup by hash or height, deterministic CLI output, shared Compose delegation, safe categorical failures, and real Bitcoin Core 31.1 CI coverage. Phase 3B.2 mempool and peer observation remains pending, so Phase 3 is incomplete.
 
-## Protected Executable Contracts
+## Most Recently Protected Executable Contracts
 - Path: [`tests/test_phase3b1_block_contracts.py`](../tests/test_phase3b1_block_contracts.py)
 - SHA-256: `c13cc16c1155d4517542c4ef3928eedb55455da51014c26b011bc4533014e59a`
-- Baseline: 48 contract cases, conditionally `xfail(strict=True)` until the complete Phase 3B.1 surface exists; the same file must then pass without modification.
+- Baseline: 48 contract cases now active and passing without modification, supplemented by 7 focused correction regressions in [`tests/test_phase3b1_block_corrections.py`](../tests/test_phase3b1_block_corrections.py).
 - Preservation rule: implementation may add complementary tests but must not modify this file or remove, skip, weaken, replace, or broadly rewrite tests integrated into `main` without explicit maintainer approval under [the increment workflow](../.agents/rules/increment-workflow.md).
 
 ## Next Action
-Integrate the protected Phase 3B.1 contracts, then delegate only the block-inspection implementation. The implementation handoff must include the protected path and checksum, prohibit changes to historical and protected tests, require an explicit report of every test-file change, and withhold commit, push, and pull-request creation until independent review.
+Plan Phase 3B.2, define its protected mempool and peer contracts, and verify that they fail only for the intentionally absent capability before delegating implementation.
 
 ## Blockers
 None.
@@ -64,9 +64,10 @@ None.
 - Implemented and integrated Phase 2 managed node lifecycle and health through PR #10: verified Bitcoin Core 31.1 images for `amd64` and `arm64`, isolated Compose topology, typed lifecycle boundaries, delegated authenticated health probing, secure storage separation, and real CI integration validation.
 - Implemented and integrated Phase 3A secure node and chain observation through PR #12: bounded authenticated JSON-RPC, immutable node overview, application and Compose delegation boundaries, deterministic human and JSON CLI output, read-only doctor integration, protected contracts, and real Bitcoin Core 31.1 validation.
 - Established the reusable contract-first increment workflow and split Phase 3B into independently reviewable block-inspection and mempool/peer vertical increments.
+- Completed and independently reviewed Phase 3B.1 read-only block inspection by hash or height while preserving its 48 protected contracts and all historical tests.
 
 ## In Progress
-- Phase 3B.1 planning and contract-first preparation for read-only block inspection.
+- Phase 3B.2 planning and contract-first preparation for read-only mempool and peer observation.
 
 ## Future Hardening (Post-v0.1.0 / Towards v1.0, Non-Blocking)
 - Automated code coverage measurement and thresholds.

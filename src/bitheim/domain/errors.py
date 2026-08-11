@@ -57,6 +57,10 @@ class RpcResponseSizeExceededError(RpcError):
     """Raised when an RPC response exceeds the maximum allowed payload size."""
 
 
+class RpcResourceNotFoundError(RpcError):
+    """Raised when a requested resource (e.g., block) is not found."""
+
+
 class RpcProtocolError(RpcError):
     """Raised when Bitcoin Core returns a JSON-RPC error response object."""
 

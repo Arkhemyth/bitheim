@@ -216,6 +216,15 @@ jobs:
           fi
           echo "RPC port 18443 is correctly not published to host"
 
+      - name: Integration test — delegated block inspection
+        env:
+          BITHEIM_BITCOIN_CORE_IMAGE: bitheim-bitcoin-core:ci
+          BITHEIM_IMAGE: bitheim:ci
+        run: |
+          BLOCK_JSON=$(docker compose -f docker/compose.yml --project-name ci-integration run --rm --no-deps -T bitheim inspect block --height 0 --json)
+          HEIGHT=$(printf "%s" "${BLOCK_JSON}" | jq -r '.height')
+          test "${HEIGHT}" = "0"
+
       - name: Integration test — stop topology
         env:
           BITHEIM_BITCOIN_CORE_IMAGE: bitheim-bitcoin-core:ci
