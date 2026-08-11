@@ -7,12 +7,13 @@
 [`docs/releases/v0.2.0-plan.md`](releases/v0.2.0-plan.md)
 
 ## Current Phase
-Phase 3 of 6 — Secure RPC and Read-Only Observation
+Phase 4 of 6 — Wallet and Regtest Funds
 
 ## Active Increment
-Phase 3B.2b: Protected executable contracts for read-only peer observation are defined and awaiting integration before implementation begins.
+Phase 4 planning: define the wallet and regtest-funds contract and split it into narrow contract-first increments before implementation begins.
 
 ## Active Specifications
+- Phase 4 wallet and regtest-funds specification: pending planning and acceptance.
 - [`SPEC-0004: Managed Regtest Node Runtime Contract`](specs/SPEC-0004-managed-regtest-node-runtime.md) (Accepted)
 - [`SPEC-0005: Secure RPC and Read-Only Observation`](specs/SPEC-0005-secure-rpc-read-only-observation.md) (Accepted)
 
@@ -23,16 +24,16 @@ Phase 3B.2b: Protected executable contracts for read-only peer observation are d
 - [`ADR-0005: Docker Compose Runtime Topology`](adr/ADR-0005-docker-compose-runtime-topology.md) (Accepted)
 
 ## Status
-Phase 3B.1 block inspection and Phase 3B.2a mempool observation are completed. Phase 3B.2b peer contracts are prepared but not yet implemented. They reflect the Bitcoin Core 31.x removal of `startingheight`, preserve unknown synced heights as optional values, and protect endpoint privacy and the 256-peer collection bound. Phase 3 remains incomplete.
+Phase 3 secure RPC and read-only observation is complete across node, blockchain, block, mempool, and peer use cases. Peer inspection reflects the Bitcoin Core 31.x removal of `startingheight`, preserves unknown synced heights as optional values, enforces the 256-peer bound at both RPC and delegated boundaries, and protects endpoint privacy. Phase 4 has not begun implementation.
 
 ## Most Recently Protected Executable Contracts
 - Path: [`tests/test_phase3b2_peer_contracts.py`](../tests/test_phase3b2_peer_contracts.py)
 - SHA-256: `afaaa8f63a31f4315b7dd14a994f1d65284dfcfc9a86d86f7c53d1260a835c02`
-- Baseline: 78 peer contract cases fail only through the file-level capability guard while the public peer-observation surface is absent. All historical tests remain active.
+- Baseline: 78 protected peer contract cases are active and passing without modification, supplemented by 6 focused correction regressions in [`tests/test_phase3b2_peer_corrections.py`](../tests/test_phase3b2_peer_corrections.py). All historical tests remain active.
 - Preservation rule: implementation may add complementary tests but must not modify this file or remove, skip, weaken, replace, or broadly rewrite tests integrated into `main` without explicit maintainer approval under [the increment workflow](../.agents/rules/increment-workflow.md).
 
 ## Next Action
-Integrate the Phase 3B.2b peer contracts, then delegate only the production code and complementary tests required to satisfy them without modifying protected or historical tests.
+Plan Phase 4, accept its wallet and regtest-funds specification, split it into narrow vertical increments, and define the first protected executable contracts before delegating implementation.
 
 ## Blockers
 None.
@@ -66,9 +67,10 @@ None.
 - Established the reusable contract-first increment workflow and split Phase 3B into independently reviewable block-inspection and mempool/peer vertical increments.
 - Completed and independently reviewed Phase 3B.1 read-only block inspection by hash or height while preserving its 48 protected contracts and all historical tests.
 - Completed and independently reviewed Phase 3B.2a read-only mempool observation while preserving its 45 protected contracts and all historical tests.
+- Completed and independently reviewed Phase 3B.2b read-only peer observation while preserving its 78 protected contracts and all historical tests.
 
 ## In Progress
-- Phase 3B.2b contract-first preparation for read-only peer observation.
+- Phase 4 wallet and regtest-funds planning and contract definition.
 
 ## Future Hardening (Post-v0.1.0 / Towards v1.0, Non-Blocking)
 - Automated code coverage measurement and thresholds.

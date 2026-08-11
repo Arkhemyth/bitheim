@@ -19,6 +19,7 @@ from bitheim.domain.node import (
     NodeLifecycleState,
     NodeOverview,
     NodeStatus,
+    PeerSummary,
 )
 
 logger = get_logger("application.service")
@@ -386,3 +387,54 @@ class NodeObservationService:
             },
         )
         return summary
+
+    def inspect_peers(self, timeout: float = 10.0) -> tuple[PeerSummary, ...]:
+        """Delegate peer inspection to the underlying port.
+
+        Args:
+            timeout: Maximum command deadline in seconds.
+
+        Returns:
+            Tuple of PeerSummary snapshots.
+
+        Raises:
+            RpcError: If inspection fails.
+        """
+        if type(timeout) not in (int, float) or isinstance(timeout, bool):
+            raise RpcError("Command deadline must be a numeric value.")
+        float_timeout = float(timeout)
+        if (
+            float_timeout <= 0
+            or math.isnan(float_timeout)
+            or math.isinf(float_timeout)
+            or float_timeout > 60.0
+        ):
+            raise RpcError("Command deadline must be a positive finite value no greater than 60s.")
+
+        try:
+            peers = self._port.get_peers(timeout=timeout)
+        except RpcError as err:
+            logger.error(
+                "Peer inspection failed",
+                extra={
+                    "event": "peer_inspection_failed",
+                    "data": {
+                        "operation": "inspect_peers",
+                        "outcome": "failure",
+                        "error_type": type(err).__name__,
+                    },
+                },
+            )
+            raise
+
+        logger.info(
+            "Peers successfully inspected",
+            extra={
+                "event": "peers_inspected",
+                "data": {
+                    "operation": "inspect_peers",
+                    "outcome": "success",
+                },
+            },
+        )
+        return peers

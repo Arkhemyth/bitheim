@@ -34,6 +34,7 @@ from bitheim.domain.node import (
     NodeLifecycleState,
     NodeOverview,
     NodeStatus,
+    PeerSummary,
 )
 from bitheim.infrastructure.bitcoin.rpc_probe import (
     EXPECTED_BITCOIN_VERSION,
@@ -804,6 +805,34 @@ class ComposeLifecycleAdapter(NodeLifecyclePort):
         data = self._run_delegated_inspection(node_id, deadline, "mempool", [])
         return self._parse_mempool_summary(data)
 
+    def inspect_peers(self, node_id: str, timeout: float = 10.0) -> tuple[PeerSummary, ...]:
+        if not isinstance(timeout, (int, float)) or isinstance(timeout, bool):
+            raise RpcError("Parameter 'timeout' must be a numeric value.")
+        float_timeout = float(timeout)
+        if (
+            float_timeout <= 0
+            or math.isnan(float_timeout)
+            or math.isinf(float_timeout)
+            or float_timeout > 60.0
+        ):
+            raise RpcError("Command deadline must be a positive finite value no greater than 60s.")
+
+        deadline = time.monotonic() + float_timeout
+
+        try:
+            self._check_docker_runtime_available(deadline)
+        except RuntimeUnavailableError:
+            raise RpcUnavailableError(
+                "Docker runtime is unavailable for peer inspection."
+            ) from None
+
+        state = self._get_lifecycle_state_deadline(node_id, deadline)
+        if state == NodeLifecycleState.STOPPED:
+            raise RpcUnavailableError("Managed node is stopped. Start the node before inspecting.")
+
+        data = self._run_delegated_inspection(node_id, deadline, "peers", [])
+        return self._parse_peers(data)
+
     # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------
@@ -945,6 +974,44 @@ class ComposeLifecycleAdapter(NodeLifecyclePort):
             )
         except ValueError:
             raise RpcMalformedResponseError("Invalid domain mempool facts.") from None
+
+    def _parse_peers(self, data: dict[str, Any]) -> tuple[PeerSummary, ...]:
+        peers_list = data.get("peers")
+        if not isinstance(peers_list, list):
+            raise RpcMalformedResponseError("Delegated peer output missing 'peers' list.")
+
+        if len(peers_list) > 256:
+            raise RpcMalformedResponseError("Delegated peer output exceeds 256 items.")
+
+        parsed_peers = []
+        peer_ids = set()
+        for p in peers_list:
+            if not isinstance(p, dict):
+                raise RpcMalformedResponseError("Delegated peer item must be an object.")
+            try:
+                peer = PeerSummary(
+                    peer_id=p.get("peer_id"),  # type: ignore[arg-type]
+                    endpoint=p.get("endpoint"),  # type: ignore[arg-type]
+                    network=p.get("network"),  # type: ignore[arg-type]
+                    inbound=p.get("inbound"),  # type: ignore[arg-type]
+                    connection_type=p.get("connection_type"),  # type: ignore[arg-type]
+                    protocol_version=p.get("protocol_version"),  # type: ignore[arg-type]
+                    subversion=p.get("subversion"),  # type: ignore[arg-type]
+                    synced_headers=p.get("synced_headers"),
+                    synced_blocks=p.get("synced_blocks"),
+                    ping_time_seconds=p.get("ping_time_seconds"),
+                )
+                if peer.peer_id in peer_ids:
+                    raise RpcMalformedResponseError(
+                        "Delegated peer output contains duplicate peer."
+                    )
+                peer_ids.add(peer.peer_id)
+                parsed_peers.append(peer)
+            except ValueError:
+                raise RpcMalformedResponseError("Invalid domain peer facts.") from None
+
+        parsed_peers.sort(key=lambda peer_obj: peer_obj.peer_id)
+        return tuple(parsed_peers)
 
     def _locate_bitheim_build_context(self) -> Path | None:
         """Locate the repository-root Dockerfile for building the Bitheim image.

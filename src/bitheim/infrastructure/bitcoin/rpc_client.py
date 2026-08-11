@@ -28,7 +28,7 @@ from bitheim.domain.errors import (
     RpcTimeoutError,
     RpcUnavailableError,
 )
-from bitheim.domain.node import BlockSummary, MempoolSummary, NodeOverview
+from bitheim.domain.node import BlockSummary, MempoolSummary, NodeOverview, PeerSummary
 
 logger = get_logger("infrastructure.bitcoin.rpc_client")
 
@@ -39,7 +39,14 @@ DEFAULT_COOKIE_PATH: Final[Path] = Path("/data/rpc/.cookie")
 
 ALLOWED_RPC_HOSTS: Final[frozenset[str]] = frozenset({"bitcoin-core"})
 ALLOWED_RPC_METHODS: Final[frozenset[str]] = frozenset(
-    {"getnetworkinfo", "getblockchaininfo", "getblockhash", "getblock", "getmempoolinfo"}
+    {
+        "getnetworkinfo",
+        "getblockchaininfo",
+        "getblockhash",
+        "getblock",
+        "getmempoolinfo",
+        "getpeerinfo",
+    }
 )
 
 MAX_COOKIE_SIZE_BYTES: Final[int] = 4096  # 4 KiB
@@ -699,3 +706,113 @@ class BitcoinRpcClient(NodeObservationPort):
             )
         except ValueError:
             raise RpcMalformedResponseError("Invalid domain mempool facts.") from None
+
+    def get_peers(self, timeout: float = DEFAULT_DEADLINE_SECONDS) -> tuple[PeerSummary, ...]:
+        if not isinstance(timeout, (int, float)) or isinstance(timeout, bool):
+            raise RpcError("Parameter 'timeout' must be a numeric value.")
+        float_timeout = float(timeout)
+        if (
+            float_timeout <= 0
+            or math.isnan(float_timeout)
+            or math.isinf(float_timeout)
+            or float_timeout > MAX_DEADLINE_SECONDS
+        ):
+            raise RpcError("Command deadline must be a positive finite value no greater than 60s.")
+
+        deadline = time.monotonic() + float_timeout
+
+        peers_data = self._send_request(
+            "getpeerinfo", [], req_id="bitheim-req-peers", deadline=deadline
+        )
+        if not isinstance(peers_data, list):
+            raise RpcMalformedResponseError("getpeerinfo result must be a JSON array.")
+
+        if len(peers_data) > 256:
+            raise RpcMalformedResponseError("getpeerinfo returned more than 256 peers.")
+
+        parsed_peers = []
+        peer_ids = set()
+        for p in peers_data:
+            if not isinstance(p, dict):
+                raise RpcMalformedResponseError("Each peer must be a JSON object.")
+            peer = self._parse_peer(p)
+            if peer.peer_id in peer_ids:
+                raise RpcMalformedResponseError("RPC getpeerinfo returned duplicate peer.")
+            peer_ids.add(peer.peer_id)
+            parsed_peers.append(peer)
+
+        parsed_peers.sort(key=lambda peer_obj: peer_obj.peer_id)
+        return tuple(parsed_peers)
+
+    def _parse_peer(self, data: dict[str, Any]) -> PeerSummary:
+        peer_id = data.get("id")
+        if type(peer_id) is not int or isinstance(peer_id, bool) or peer_id < 0:
+            raise RpcMalformedResponseError("Field 'id' must be a non-negative integer.")
+
+        endpoint = data.get("addr")
+        if not isinstance(endpoint, str):
+            raise RpcMalformedResponseError("Field 'addr' must be a string.")
+
+        network = data.get("network")
+        if not isinstance(network, str):
+            raise RpcMalformedResponseError("Field 'network' must be a string.")
+
+        inbound = data.get("inbound")
+        if type(inbound) is not bool:
+            raise RpcMalformedResponseError("Field 'inbound' must be a boolean.")
+
+        connection_type = data.get("connection_type")
+        if not isinstance(connection_type, str):
+            raise RpcMalformedResponseError("Field 'connection_type' must be a string.")
+
+        version = data.get("version")
+        if type(version) is not int or isinstance(version, bool) or version < 0:
+            raise RpcMalformedResponseError("Field 'version' must be a non-negative integer.")
+
+        subver = data.get("subver")
+        if not isinstance(subver, str):
+            raise RpcMalformedResponseError("Field 'subver' must be a string.")
+
+        synced_headers = data.get("synced_headers")
+        if (
+            type(synced_headers) is not int
+            or isinstance(synced_headers, bool)
+            or synced_headers < -1
+        ):
+            raise RpcMalformedResponseError("Field 'synced_headers' must be an integer >= -1.")
+        mapped_headers = None if synced_headers == -1 else synced_headers
+
+        synced_blocks = data.get("synced_blocks")
+        if type(synced_blocks) is not int or isinstance(synced_blocks, bool) or synced_blocks < -1:
+            raise RpcMalformedResponseError("Field 'synced_blocks' must be an integer >= -1.")
+        mapped_blocks = None if synced_blocks == -1 else synced_blocks
+
+        ping_time_seconds = None
+        if "pingtime" in data:
+            pt = data["pingtime"]
+            if not isinstance(pt, Decimal):
+                raise RpcMalformedResponseError("Field 'pingtime' must be a Decimal.")
+            if not pt.is_finite() or pt < 0:
+                raise RpcMalformedResponseError(
+                    "Field 'pingtime' must be a finite non-negative Decimal."
+                )
+            try:
+                ping_time_seconds = float(pt)
+            except OverflowError:
+                raise RpcMalformedResponseError("Field 'pingtime' conversion failed.") from None
+
+        try:
+            return PeerSummary(
+                peer_id=peer_id,
+                endpoint=endpoint,
+                network=network,
+                inbound=inbound,
+                connection_type=connection_type,
+                protocol_version=version,
+                subversion=subver,
+                synced_headers=mapped_headers,
+                synced_blocks=mapped_blocks,
+                ping_time_seconds=ping_time_seconds,
+            )
+        except ValueError:
+            raise RpcMalformedResponseError("Invalid domain peer facts.") from None
