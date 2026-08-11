@@ -10,10 +10,10 @@
 Phase 4 of 6 — Wallet and Regtest Funds
 
 ## Active Increment
-Phase 4 planning: define the wallet and regtest-funds contract and split it into narrow contract-first increments before implementation begins.
+Phase 4 planning — Phase 4A contract preparation: define, verify, integrate, and checksum the executable contracts for wallet lifecycle and receiving-address behavior before delegating production implementation.
 
 ## Active Specifications
-- Phase 4 wallet and regtest-funds specification: pending planning and acceptance.
+- [`SPEC-0006: Wallet and Regtest Funds`](specs/SPEC-0006-wallet-and-regtest-funds.md) (Accepted)
 - [`SPEC-0004: Managed Regtest Node Runtime Contract`](specs/SPEC-0004-managed-regtest-node-runtime.md) (Accepted)
 - [`SPEC-0005: Secure RPC and Read-Only Observation`](specs/SPEC-0005-secure-rpc-read-only-observation.md) (Accepted)
 
@@ -24,7 +24,7 @@ Phase 4 planning: define the wallet and regtest-funds contract and split it into
 - [`ADR-0005: Docker Compose Runtime Topology`](adr/ADR-0005-docker-compose-runtime-topology.md) (Accepted)
 
 ## Status
-Phase 3 secure RPC and read-only observation is complete across node, blockchain, block, mempool, and peer use cases. Peer inspection reflects the Bitcoin Core 31.x removal of `startingheight`, preserves unknown synced heights as optional values, enforces the 256-peer bound at both RPC and delegated boundaries, and protects endpoint privacy. Phase 4 has not begun implementation.
+Phase 3 secure RPC and read-only observation is complete. SPEC-0006 and its three-increment Phase 4 split have passed independent review and are accepted: 4A wallet lifecycle and receiving addresses, 4B exact balance and UTXO observation, and 4C bounded regtest block generation and coinbase maturity. No Phase 4 production implementation or executable contract has begun.
 
 ## Most Recently Protected Executable Contracts
 - Path: [`tests/test_phase3b2_peer_contracts.py`](../tests/test_phase3b2_peer_contracts.py)
@@ -33,7 +33,7 @@ Phase 3 secure RPC and read-only observation is complete across node, blockchain
 - Preservation rule: implementation may add complementary tests but must not modify this file or remove, skip, weaken, replace, or broadly rewrite tests integrated into `main` without explicit maintainer approval under [the increment workflow](../.agents/rules/increment-workflow.md).
 
 ## Next Action
-Plan Phase 4, accept its wallet and regtest-funds specification, split it into narrow vertical increments, and define the first protected executable contracts before delegating implementation.
+Integrate this accepted documentation increment, then define and protect the Phase 4A executable contracts before delegating production implementation.
 
 ## Blockers
 None.
@@ -70,7 +70,7 @@ None.
 - Completed and independently reviewed Phase 3B.2b read-only peer observation while preserving its 78 protected contracts and all historical tests.
 
 ## In Progress
-- Phase 4 wallet and regtest-funds planning and contract definition.
+- Phase 4A wallet lifecycle and receiving-address executable-contract preparation.
 
 ## Future Hardening (Post-v0.1.0 / Towards v1.0, Non-Blocking)
 - Automated code coverage measurement and thresholds.
