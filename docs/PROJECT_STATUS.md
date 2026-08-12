@@ -10,7 +10,7 @@
 Phase 4 of 6 — Wallet and Regtest Funds
 
 ## Active Increment
-Phase 4 planning — Phase 4A contract preparation: define, verify, integrate, and checksum the executable contracts for wallet lifecycle and receiving-address behavior before delegating production implementation.
+Phase 4 planning — Phase 4A contract review and integration: independently review and integrate the protected executable contracts for wallet lifecycle and receiving-address behavior before delegating production implementation.
 
 ## Active Specifications
 - [`SPEC-0006: Wallet and Regtest Funds`](specs/SPEC-0006-wallet-and-regtest-funds.md) (Accepted)
@@ -24,16 +24,16 @@ Phase 4 planning — Phase 4A contract preparation: define, verify, integrate, a
 - [`ADR-0005: Docker Compose Runtime Topology`](adr/ADR-0005-docker-compose-runtime-topology.md) (Accepted)
 
 ## Status
-Phase 3 secure RPC and read-only observation is complete. SPEC-0006 and its three-increment Phase 4 split have passed independent review and are accepted: 4A wallet lifecycle and receiving addresses, 4B exact balance and UTXO observation, and 4C bounded regtest block generation and coinbase maturity. No Phase 4 production implementation or executable contract has begun.
+Phase 3 secure RPC and read-only observation is complete. SPEC-0006 and its three-increment Phase 4 split are accepted. Phase 4A now has a preimplementation executable contract covering wallet identity, lifecycle, receiving addresses, RPC boundaries, application behavior, CLI/delegation, malformed responses, and privacy. Production implementation has not begun.
 
 ## Most Recently Protected Executable Contracts
-- Path: [`tests/test_phase3b2_peer_contracts.py`](../tests/test_phase3b2_peer_contracts.py)
-- SHA-256: `afaaa8f63a31f4315b7dd14a994f1d65284dfcfc9a86d86f7c53d1260a835c02`
-- Baseline: 78 protected peer contract cases are active and passing without modification, supplemented by 6 focused correction regressions in [`tests/test_phase3b2_peer_corrections.py`](../tests/test_phase3b2_peer_corrections.py). All historical tests remain active.
+- Path: [`tests/test_phase4a_wallet_contracts.py`](../tests/test_phase4a_wallet_contracts.py)
+- SHA-256: `8519e41d1cc679222399a0a967e0a42ba08e0eeb94b6d945d1cba9559faa5676`
+- Baseline: 56 protected Phase 4A cases are collected as strict expected failures while the complete wallet capability is absent. The 379 historical tests remain active and passing without modification.
 - Preservation rule: implementation may add complementary tests but must not modify this file or remove, skip, weaken, replace, or broadly rewrite tests integrated into `main` without explicit maintainer approval under [the increment workflow](../.agents/rules/increment-workflow.md).
 
 ## Next Action
-Integrate this accepted documentation increment, then define and protect the Phase 4A executable contracts before delegating production implementation.
+Integrate the independently reviewed Phase 4A executable-contract increment. Then delegate the minimum production implementation required to activate all 56 protected cases without modifying this file or historical tests.
 
 ## Blockers
 None.
@@ -70,7 +70,7 @@ None.
 - Completed and independently reviewed Phase 3B.2b read-only peer observation while preserving its 78 protected contracts and all historical tests.
 
 ## In Progress
-- Phase 4A wallet lifecycle and receiving-address executable-contract preparation.
+- Phase 4A wallet lifecycle and receiving-address executable-contract review and integration.
 
 ## Future Hardening (Post-v0.1.0 / Towards v1.0, Non-Blocking)
 - Automated code coverage measurement and thresholds.
